@@ -5,6 +5,61 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-06 — Step 5: Preprocessing pipeline
+
+### Completed
+- Created `model/preprocessing.py`: loads the raw synthetic CSV, drops
+  `company_id`/`company_name`, adds the 3 derived ratio features
+  (`net_cash_margin`, `cash_buffer_ratio`, `gst_to_bank_turnover_ratio`),
+  label-encodes `business_category` and `state` into
+  `business_category_encoded`/`state_encoded`, and splits into train/test
+  (80/20, stratified on `credit_default_status`, `random_state=42`).
+- Left the 3 nullable GST columns (and the new `gst_to_bank_turnover_ratio`)
+  as NaN for unregistered firms — no imputation — since XGBoost/LightGBM
+  handle NaN natively and `has_gst_registration` stays in the feature list
+  as the explicit "missing because unregistered" signal.
+- Chose label/ordinal encoding over one-hot for the 2 categorical columns:
+  tree models split on integer codes fine, and one-hot would have added 18
+  extra 0/1 columns that clutter future SHAP summary plots.
+- Saved the category-to-code mapping to
+  `model/artifacts/category_encodings.json`, so the same encoding can be
+  reapplied later (e.g. by the API) instead of being re-derived.
+- Added `FEATURE_COLUMNS` (20 columns, explicitly excluding identifiers and
+  the target) to `model/config.py`, per the project rule that feature lists
+  live only there.
+- Saved `data/processed/train.csv` (4,000 rows) and `data/processed/test.csv`
+  (1,000 rows).
+- Ran the validation summary: 20 features, train/test shapes (4000,21) /
+  (1000,21), default rate 14.80% in both the full set, train, and test
+  (0.00% difference), no identifier columns in the feature list, and missing
+  values confined to exactly the 3 GST columns + the derived GST ratio,
+  for the same unregistered-firm rows.
+- Updated `CLAUDE.md` current step to "Step 5 complete, next Step 6".
+
+### Files created/changed
+- `model/preprocessing.py`: created.
+- `model/config.py`: added `FEATURE_COLUMNS`.
+- `model/artifacts/category_encodings.json`: created.
+- `data/processed/train.csv`, `data/processed/test.csv`: created.
+- `CLAUDE.md`: updated current step.
+
+### Decisions made
+- Derived ratios are computed and saved into the processed CSVs (not
+  recomputed at train time), so train/test files are fully self-contained.
+- Encoding choice: label/ordinal encoding (alphabetical order per category)
+  rather than one-hot, specifically for tree-model + SHAP friendliness.
+- Output format: plain CSVs with features + target together (train.csv /
+  test.csv), rather than separate pickled X/y arrays, so the files stay
+  human-readable and easy to inspect/debug as a beginner.
+
+### Next step
+- Step 6: train a baseline XGBoost/LightGBM model on `data/processed/train.csv`,
+  evaluate on `data/processed/test.csv` (expect ROC-AUC roughly 0.75-0.85
+  per the data dictionary's design), then move on to SHAP explanations and
+  the 300-900 credit score conversion.
+
+---
+
 ## 2026-10-06 — Bug fix: account_vintage_months rounding (found in Step 4 EDA)
 
 ### Completed

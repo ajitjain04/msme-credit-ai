@@ -1,0 +1,26 @@
+{
+  "business_category": {
+    "food": 0,
+    "manufacturing": 1,
+    "retail": 2,
+    "services": 3,
+    "trading": 4
+  },
+  "state": {
+    "Andhra Pradesh": 0,
+    "Bihar": 1,
+    "Delhi": 2,
+    "Gujarat": 3,
+    "Haryana": 4,
+    "Karnataka": 5,
+    "Kerala": 6,
+    "Madhya Pradesh": 7,
+    "Maharashtra": 8,
+    "Punjab": 9,
+    "Rajasthan": 10,
+    "Tamil Nadu": 11,
+    "Telangana": 12,
+    "Uttar Pradesh": 13,
+    "West Bengal": 14
+  }
+}

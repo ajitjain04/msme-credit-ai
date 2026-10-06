@@ -28,4 +28,4 @@ dashboard/ (Streamlit), tests/, docs/, notebooks/.
   in the same format already used in that file.
 
 ## Current step
-Step 3: synthetic data generation.
+Step 5 complete: preprocessing pipeline. Next: Step 6 (model training).
