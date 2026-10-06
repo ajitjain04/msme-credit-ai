@@ -24,6 +24,8 @@ dashboard/ (Streamlit), tests/, docs/, notebooks/.
 - Use type hints. Keep feature lists and thresholds in model/config.py only.
 - Explain changes in plain language after making them.
 - Work on one step at a time; don't modify files from other steps unless asked.
+- Update docs/PROGRESS_LOG.md with a new dated entry at the end of every session,
+  in the same format already used in that file.
 
 ## Current step
-Step 1 complete. Next: Step 2 (feature design and data dictionary).
+Step 3: synthetic data generation.
