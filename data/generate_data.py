@@ -193,18 +193,22 @@ def generate_banking(
 
     # Account vintage: can't exceed the business's own age, and is usually
     # a bit shorter than it (businesses sometimes switch/open new accounts).
+    #
+    # Bug fix (found during Step 4 EDA): the hard cap must be FLOOR(age * 12),
+    # not ROUND(age * 12). Rounding the cap can round it UP (e.g. age=2.04
+    # years -> 24.48 months -> rounds to 24... but age=2.06 -> 24.72 months
+    # could round to 25, which is above the true age-in-months). Using the
+    # same floored cap everywhere below guarantees
+    # account_vintage_months <= age_of_business_years * 12 for every row,
+    # with no exceptions.
+    age_months_cap = np.floor(df["age_of_business_years"].to_numpy() * 12).astype(int)
     vintage_fraction = clip(rng.beta(5, 1.5, n), 0.2, 1.0)
-    account_vintage_months = clip(
-        np.round(df["age_of_business_years"].to_numpy() * 12 * vintage_fraction),
-        6,
-        240,
-    ).astype(int)
-    # Never exceed the hard cap of business age in months.
-    account_vintage_months = np.minimum(
-        account_vintage_months,
-        np.round(df["age_of_business_years"].to_numpy() * 12).astype(int),
-    )
-    account_vintage_months = clip(account_vintage_months, 6, 240)
+    account_vintage_months = np.floor(age_months_cap * vintage_fraction).astype(int)
+    # Belt-and-braces: never exceed the floored age cap, and never exceed
+    # the dataset-wide upper bound of 240 months.
+    account_vintage_months = np.minimum(account_vintage_months, age_months_cap)
+    upper_bound = np.minimum(age_months_cap, 240)
+    account_vintage_months = clip(account_vintage_months, 6, upper_bound)
 
     out = df.copy()
     out["avg_monthly_inflow"] = np.round(avg_monthly_inflow, 2)

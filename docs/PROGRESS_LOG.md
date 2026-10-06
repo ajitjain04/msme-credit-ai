@@ -5,6 +5,105 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-06 — Bug fix: account_vintage_months rounding (found in Step 4 EDA)
+
+### Completed
+- Fixed the `account_vintage_months` rounding bug found during Step 4 EDA in
+  `data/generate_data.py`: the age-based cap now uses `floor(age_of_business_years * 12)`
+  consistently everywhere, instead of rounding the cap and the vintage value
+  separately (which could round the cap *up* past the true age-in-months for
+  some rows).
+- Regenerated `data/synthetic/msme_alternative_data.csv` with the same
+  `random_state=42` and 5,000 rows. No other column's logic was touched.
+- Re-ran the validation summary: default rate 14.80%, GST registration
+  83.6%, business category counts, and missing-value counts all essentially
+  unchanged from before the fix — confirming only the vintage calculation
+  changed.
+- Explicitly re-checked the constraint: **0 out of 5,000 rows** now violate
+  `account_vintage_months <= age_of_business_years * 12` (was 12/5,000
+  before the fix).
+
+### Files created/changed
+- `data/generate_data.py`: fixed vintage-cap rounding logic.
+- `data/synthetic/msme_alternative_data.csv`: regenerated.
+
+### Decisions made
+- Used `floor()` instead of `round()` for the age-in-months cap, since
+  rounding can push the cap above the true value; floor guarantees the cap
+  is never larger than `age_of_business_years * 12`.
+
+### Next step
+- Re-run `notebooks/01_eda.ipynb` against the regenerated CSV to confirm
+  Check 1 now passes, then proceed to Step 5: preprocessing
+  (`model/preprocessing.py`).
+
+**Update (same day):** re-ran `notebooks/01_eda.ipynb` top to bottom against
+the corrected `data/synthetic/msme_alternative_data.csv` using
+`jupyter nbconvert --execute`. Check 1 now shows **0 violations / PASS**.
+Step 4's Section 5 now passes **5/5 checks** (all other sections unchanged:
+default rate 14.80%, same 4 expected-by-design correlated pairs in the
+heatmap). Updated the notebook's final summary cell to reflect the all-pass
+result and re-saved the notebook with its outputs. Step 4 is now complete
+with no open issues; ready to start Step 5.
+
+---
+
+## 2026-10-06 — Step 4: Exploratory Data Analysis (EDA)
+
+### Completed
+- Built `notebooks/01_eda.ipynb`, loading `data/synthetic/msme_alternative_data.csv`
+  and checking it against `docs/data_dictionary.md`, with a beginner-friendly
+  markdown explanation before each section. No cleaning/preprocessing — this
+  notebook only observes and visualizes.
+- Section 1: shape (5,000 rows x 20 cols), dtypes, and missing-value check —
+  confirmed missing values appear in exactly the 3 GST columns and exactly
+  for companies with `has_gst_registration == 0`.
+- Section 2: target distribution — 741/5,000 defaults (14.82%), close to the
+  15% design target.
+- Section 3: histograms for 6 key numeric columns — right shapes, zero
+  negative values in any of them.
+- Section 4: `business_category` percentages close to targets; `state`
+  distribution looks like a reasonable weighted spread.
+- Section 5: 5 relationship sanity checks from the data dictionary, with
+  printed pass/fail and actual numbers (see Decisions below — 4 passed,
+  1 failed on a small rounding bug).
+- Section 6: box plots + group means comparing 8 key features between
+  default = 0 and default = 1 — defaulted companies show worse cash flow,
+  more bounces, lower GST regularity, and younger age on average, as
+  intended.
+- Section 7: correlation heatmap + an automatic flag for any column pair
+  with |correlation| > 0.9 — found 4 such pairs, all expected by design.
+- Ran the full notebook end-to-end with `jupyter nbconvert --execute` (no
+  errors), then filled in the final summary markdown cell with the actual
+  findings and a verdict.
+
+### Files created/changed
+- `notebooks/01_eda.ipynb`: created and executed.
+
+### Decisions made
+- **Bug found:** Check 1 (`account_vintage_months <= age_of_business_years * 12`)
+  failed for 12 of 5,000 rows (0.24%) — a floating-point rounding-order issue
+  in `data/generate_data.py`'s vintage calculation, not a conceptual flaw.
+  Decided to leave `data/generate_data.py` untouched for now (per the
+  one-step-at-a-time rule) and fix it at the start of Step 5, regenerating
+  the CSV before building the preprocessing pipeline on top of it.
+- The 4 correlated column pairs found in Section 7 (inflow<->outflow,
+  inflow<->GST turnover, GST turnover<->outflow, age<->account vintage) are
+  expected consequences of the generator's design, not bugs. Noted as
+  something to keep in mind in Step 5 — e.g. preferring the derived ratios
+  over some raw pairs to reduce redundancy for SHAP later.
+- Overall verdict: dataset is realistic and ready for Step 5 once the small
+  Check 1 rounding bug is patched.
+
+### Next step
+- Step 5: fix the `account_vintage_months` rounding bug in
+  `data/generate_data.py`, regenerate the CSV, then build the preprocessing
+  pipeline (`model/preprocessing.py`) — encode categoricals, handle the
+  intentional GST NaNs, and compute the derived ratios (net cash margin,
+  cash buffer ratio, GST-to-bank turnover ratio).
+
+---
+
 ## 2026-10-06 — Step 3: Synthetic data generation
 
 ### Completed
