@@ -1,0 +1,36 @@
+# Data
+pandas
+numpy
+faker
+
+# Machine learning
+scikit-learn
+xgboost
+lightgbm
+optuna
+joblib
+
+# Explainability
+shap
+
+# Visualisation
+matplotlib
+seaborn
+plotly
+
+# Backend
+fastapi
+uvicorn[standard]
+pydantic
+sqlalchemy
+python-dotenv
+
+# Frontend
+streamlit
+requests
+
+# Notebooks and testing
+jupyter
+ipykernel
+pytest
+httpx
