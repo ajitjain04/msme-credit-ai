@@ -5,6 +5,59 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 8: Credit score (300-900) + risk band conversion
+
+### Completed
+- Created `model/scoring.py` (written and reviewed, not executed by the
+  assistant — the user ran it manually).
+- `probability_to_score()`: a 3-segment piecewise-linear mapping from
+  default probability to a 300-900 score, calibrated to hit the exact
+  CLAUDE.md boundaries: 900 → 750 over p = 0.00-0.20, 750 → 600 over
+  p = 0.20-0.50, 600 → 300 over p = 0.50-1.00. All breakpoints are read
+  from `model/config.py`'s `RISK_BANDS`, not re-typed as separate numbers.
+- `assign_risk_band()`: Low Risk (750+) / Medium Risk (600-749) / High Risk
+  (<600), matching CLAUDE.md exactly.
+- `score_company()`: the single function that will back the Step 11 API —
+  takes one company (dict/Series/single-row DataFrame), runs the tuned
+  model, and returns `{default_probability, credit_score, risk_band}`.
+- **Risk band distribution on the test set:** Low Risk 8.2% (82), Medium
+  Risk 58.9% (589), High Risk 32.9% (329).
+- **Sanity check vs. Step 7's 0.5 threshold:** risk-band-derived metrics
+  (Precision 0.2948, Recall 0.6554, F1 0.4067) closely match Step 7's
+  (Precision 0.2982, Recall 0.6689, F1 0.4125) — confusion matrices
+  `[[620,232],[51,97]]` vs. `[[619,233],[49,99]]` differ by only 2
+  companies right at the p=0.50/score=600 boundary. Confirms the
+  probability-to-score formula is mathematically consistent with the
+  tuned model's actual behavior, not a disconnected piece of logic.
+- **Example companies spot-checked:** two 22-26yr old, zero-bounce,
+  high-GST-compliance companies scored 862-870 (Low Risk); a thinner-margin
+  3.7yr company scored 643 (Medium Risk); two ~3yr companies with 7-8
+  bounces and negative cash margin scored 342-343 (High Risk) and both had
+  actually defaulted — scoring behaves sensibly on real examples.
+
+### Files created/changed
+- `model/scoring.py`: created.
+
+### Decisions made
+- Used piecewise-linear (3 segments) rather than a single linear or
+  logit-based formula, since no single straight line can pass through all
+  4 required points (0→900, 0.20→750, 0.50→600, 1→300) — verified
+  algebraically in the module docstring, not just eyeballed.
+- "High Risk" is defined as `score < 600` (strict), which is mathematically
+  equivalent to `probability > 0.50` (strict) under this formula — matches
+  Step 7's `probability >= 0.50` cutoff everywhere except the
+  essentially-never-hit exact boundary p == 0.50.
+- `score_company()`'s input/output shapes were deliberately kept simple
+  (plain dict/Series/DataFrame in, plain dict out) now, specifically so
+  Step 11's backend API can call it with minimal glue code.
+
+### Next step
+- Step 9: SHAP explanations for individual predictions (which features
+  pushed a company's score up or down), using the tuned model from
+  `model/artifacts/model.joblib`.
+
+---
+
 ## 2026-10-09 — Step 7: Class-imbalance fix + Optuna hyperparameter tuning
 
 ### Completed
