@@ -5,6 +5,49 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 6: Baseline model training (script written, not yet run)
+
+### Completed
+- Created `model/train.py`: loads `data/processed/train.csv`/`test.csv`
+  using `FEATURE_COLUMNS`/`TARGET_COLUMN` from `model/config.py` (no
+  hardcoded column names), trains 4 baseline classifiers (Logistic
+  Regression, Random Forest, XGBoost, LightGBM), evaluates each on the test
+  set, prints a comparison table sorted by ROC-AUC, and saves the best
+  model + all models' metrics.
+- Logistic Regression and Random Forest are wrapped in a scikit-learn
+  `Pipeline` with a median `SimpleImputer` (fit on train only, applied to
+  test -- no leakage) since neither handles NaN natively; XGBoost and
+  LightGBM train directly on the raw data with the GST NaNs intact.
+- Evaluation uses ROC-AUC, precision/recall/F1 for the default class, a
+  confusion matrix, and the KS (Kolmogorov-Smirnov) statistic -- explained
+  in a module docstring why these fit an ~15%-default imbalanced target
+  better than plain accuracy.
+- LightGBM import is wrapped in a try/except: if not installed, the script
+  warns and skips it instead of crashing, so the other 3 models still run.
+  (LightGBM was not installed in this environment as of writing.)
+- Per the user's request, the script was only written and reviewed line by
+  line -- **not executed**. The user will run it manually.
+
+### Files created/changed
+- `model/train.py`: created.
+
+### Decisions made
+- Imputation lives inside a `Pipeline` (not a standalone preprocessing
+  step) specifically so `.fit`/`.predict` can't leak test-set information
+  into the training-set medians.
+- Kept all 4 models at standard default parameters (e.g. `n_estimators=100`)
+  intentionally -- hyperparameter tuning is Step 7, not this step.
+- Best model is selected by test-set ROC-AUC and saved to
+  `model/artifacts/model.joblib`; all 4 models' metrics are saved to
+  `model/artifacts/model_metrics.json` for later reference/comparison.
+
+### Next step
+- Run `python model/train.py` (optionally `pip install lightgbm` first so
+  all 4 models are compared), confirm ROC-AUC lands in the expected
+  ~0.75-0.85 range, then move to Step 7: hyperparameter tuning with Optuna.
+
+---
+
 ## 2026-10-06 — Step 5: Preprocessing pipeline
 
 ### Completed

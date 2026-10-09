@@ -1,0 +1,95 @@
+{
+  "best_model": "Logistic Regression",
+  "best_model_metrics": {
+    "model_name": "Logistic Regression",
+    "roc_auc": 0.744282134246923,
+    "precision_default": 0.5,
+    "recall_default": 0.10135135135135136,
+    "f1_default": 0.16853932584269662,
+    "ks_statistic": 0.4215201116609567,
+    "confusion_matrix": [
+      [
+        837,
+        15
+      ],
+      [
+        133,
+        15
+      ]
+    ]
+  },
+  "all_model_metrics": [
+    {
+      "model_name": "Logistic Regression",
+      "roc_auc": 0.744282134246923,
+      "precision_default": 0.5,
+      "recall_default": 0.10135135135135136,
+      "f1_default": 0.16853932584269662,
+      "ks_statistic": 0.4215201116609567,
+      "confusion_matrix": [
+        [
+          837,
+          15
+        ],
+        [
+          133,
+          15
+        ]
+      ]
+    },
+    {
+      "model_name": "Random Forest",
+      "roc_auc": 0.6849305291206699,
+      "precision_default": 0.34285714285714286,
+      "recall_default": 0.08108108108108109,
+      "f1_default": 0.13114754098360656,
+      "ks_statistic": 0.29012815632533945,
+      "confusion_matrix": [
+        [
+          829,
+          23
+        ],
+        [
+          136,
+          12
+        ]
+      ]
+    },
+    {
+      "model_name": "XGBoost",
+      "roc_auc": 0.6923296535972591,
+      "precision_default": 0.4897959183673469,
+      "recall_default": 0.16216216216216217,
+      "f1_default": 0.2436548223350254,
+      "ks_statistic": 0.3122700164953686,
+      "confusion_matrix": [
+        [
+          827,
+          25
+        ],
+        [
+          124,
+          24
+        ]
+      ]
+    },
+    {
+      "model_name": "LightGBM",
+      "roc_auc": 0.7216803070676311,
+      "precision_default": 0.44,
+      "recall_default": 0.14864864864864866,
+      "f1_default": 0.2222222222222222,
+      "ks_statistic": 0.37333460220784165,
+      "confusion_matrix": [
+        [
+          824,
+          28
+        ],
+        [
+          126,
+          22
+        ]
+      ]
+    }
+  ]
+}
