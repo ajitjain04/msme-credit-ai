@@ -49,23 +49,22 @@ sizes (n=6, n=15) too small for a real conclusion -- mechanism confirmed
 working, flags are provisional pending more data. 6 cohorts excluded for
 n<5.
 
-Step 10b: PostgreSQL migration. `backend/database.py` now reads
+Step 10b complete: PostgreSQL migration. `backend/database.py` reads
 `DATABASE_URL` from a git-ignored `.env` (`.env.example` committed as the
-template), falling back to the original SQLite file with a clear warning
-if unset. Fixed a real version-specific bug while verifying: this
-environment's SQLAlchemy (2.1.3) resolves a bare `postgresql://` URL to
-the `psycopg` v3 dialect, not `psycopg2` (what's actually installed) —
-the URL must say `postgresql+psycopg2://` explicitly. Both branches
-(Postgres URL present / absent) verified via engine construction only (no
-real DB connection attempted); real SQLite file confirmed untouched. Not
-yet run against a real Postgres server. Next: user installs/starts
-PostgreSQL, sets their real password in `.env`, runs
-`python scripts/init_db.py` to seed it, then Step 12e.
+template). Live-migrated for real: the `msme_credit` database on
+`localhost:5432`, confirmed via the startup log's masked connection
+string (not the SQLite fallback), and `scripts/init_db.py` successfully
+reseeded 20 companies with calibrated scores (609-861 range, 13 Low Risk
+/ 7 Medium Risk — consistent with Step 12c's post-calibration
+distribution). `data/processed/msme_credit.db` kept untouched as a
+backup/reference, not used going forward.
+
+Next: Step 12e (PDF report generator).
 
 ## Upgrade sequence (agreed order, do not resequence without asking)
 1. ~~Step 12c: probability calibration~~ — complete.
 2. ~~Step 12d: fairness / disparate impact ratio (DIR) auditing~~ — complete.
-3. ~~Step 10b: PostgreSQL migration~~ — code complete, user to run against a real Postgres server.
+3. ~~Step 10b: PostgreSQL migration~~ — complete.
 4. **Step 12e: PDF report generator — next.**
 5. Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard).
 6. Step 13: tests.

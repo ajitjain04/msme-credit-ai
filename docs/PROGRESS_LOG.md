@@ -5,6 +5,35 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 10b (live run): Migration confirmed working against real PostgreSQL
+
+### Completed
+- **Successfully migrated from SQLite to PostgreSQL for real** — the
+  `msme_credit` database on `localhost:5432` (the code/wiring itself was
+  built in the previous entry below).
+- Verified via the startup log showing the **masked Postgres connection
+  string** (not the SQLite fallback warning), confirming
+  `backend/database.py` correctly picked up the real `DATABASE_URL` from
+  `.env`.
+- Ran `scripts/init_db.py` against the new Postgres database: it
+  successfully seeded 20 companies with their calibrated scores —
+  **score range 609-861, 13 Low Risk / 7 Medium Risk** — consistent with
+  Step 12c's post-calibration distribution (no High Risk companies in
+  this particular sample, which is plausible given calibration shifted
+  the overall distribution toward Low Risk).
+- `data/processed/msme_credit.db` (the SQLite file) was kept untouched as
+  a backup/reference and is no longer used going forward — all reads/
+  writes now go through the real Postgres database.
+
+### Files created/changed
+- `.env`: real password set locally by the user (git-ignored, never seen
+  by the assistant).
+
+### Next step
+- Step 12e: PDF report generator.
+
+---
+
 ## 2026-10-09 — Step 10b: PostgreSQL migration
 
 ### Completed
