@@ -5,6 +5,69 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 12b-3: PDF button, Portfolio & Fairness pages (React) -- Step 12b complete
+
+### Completed
+- **PDF download button**: added `downloadCompanyPdfReport()` to
+  `frontend/lib/api.ts` (fetches `GET /api/v1/company/{company_id}/report
+  /pdf` with `responseType: "blob"`, then the standard browser
+  blob->object-URL->temporary-`<a>`-click pattern) and wired a "Download
+  PDF Report" button into `frontend/app/page.tsx`'s scorecard section,
+  matching the existing button styling, with its own loading/error state.
+- **Portfolio Overview page**: `frontend/app/portfolio/page.tsx` (new
+  route) + `frontend/components/PortfolioPieChart.tsx` (1:1 port of
+  `build_portfolio_pie_chart()`) -- stat cards (total companies, average
+  score, % High Risk) + the risk-band donut chart + a manual Refresh
+  button, matching `dashboard/app.py`'s Tab 3.
+- **Fairness Audit page**: `frontend/app/fairness/page.tsx` (new route,
+  no Streamlit equivalent existed) -- a plain-language DIR explainer, a
+  cohort table pairing DIR with its actual default rate and cohort size
+  (never DIR alone, same principle `backend/main.py`'s
+  `get_fairness_audit()` docstring states), a red badge for
+  `flagged_low_dir` cohorts, and the excluded-small-cohorts list.
+- **Navigation**: added a top nav bar to `frontend/app/layout.tsx` (via
+  `next/link`, so every page gets it and navigation is client-side) with
+  links to Evaluate (`/`), Portfolio (`/portfolio`), and Fairness Audit
+  (`/fairness`).
+- **Bug fix: low-contrast table text on the Fairness Audit page.** Root
+  cause was more specific than a copy-pasted muted class: 4 of the
+  table's `<td>` cells (`cohort_value`, `dir_value`,
+  `group_actual_default_rate`, `cohort_size`) had **no explicit Tailwind
+  text-color class at all**, so they inherited `globals.css`'s
+  `--foreground` CSS variable -- which is near-black in light mode but
+  flips to near-white (`#ededed`) under `prefers-color-scheme: dark`.
+  Every card/table on the page uses hardcoded light backgrounds
+  (`bg-white`/`bg-gray-50`) that do NOT flip with that media query, so on
+  a dark-mode system those 4 cells rendered near-white text on a light
+  background -- invisible -- while the header row and the `text-gray-900`
+  dimension column stayed readable because their colors were explicit.
+  Fixed by adding `text-gray-900` to those 4 cells; the intentionally
+  muted "Reference Cohort" column (`text-gray-500`) and the colored
+  OK/flagged badges were left untouched, as asked.
+
+### Verified end-to-end (real browser, real backend)
+- PDF button downloads a real PDF matching the backend-generated report.
+- Portfolio page: live stat cards (28 companies, avg score 792, 75% Low /
+  25% Medium / 0% High at time of testing) and a working donut chart;
+  Refresh re-fetches correctly.
+- Fairness Audit page: DIR explainer renders, DIR is always paired with
+  actual default rate (never shown alone), excluded small cohorts are
+  listed, and the low-contrast fix holds up.
+
+### Step 12b complete
+The full React/Next.js dashboard now has feature parity with the
+Streamlit dashboard (evaluation form, scorecard, SHAP explainability, PDF
+download, portfolio overview) plus a Fairness Audit page Streamlit never
+had -- matching the literature review's Table 10 architecture ("React/
+Next.js dashboard with Plotly visualisations"). All 5 planned upgrades
+(12c, 12d, 10b, 12e, 12b) from the agreed upgrade sequence are now done.
+
+### Next step
+Step 13: tests (`tests/test_api.py`, `tests/test_predictor.py`,
+`tests/test_scoring.py`).
+
+---
+
 ## 2026-10-09 — Step 12b-2: real evaluation form, scorecard & SHAP view (React)
 
 ### Completed

@@ -10,6 +10,7 @@ import { useState } from "react";
 import EvaluationForm from "@/components/EvaluationForm";
 import ScoreGauge from "@/components/ScoreGauge";
 import ShapDriverChart from "@/components/ShapDriverChart";
+import { downloadCompanyPdfReport, formatApiError } from "@/lib/api";
 import { featureLabel, RISK_BAND_COLORS } from "@/lib/featureLabels";
 import type { EvaluateResponse } from "@/lib/types";
 
@@ -21,6 +22,21 @@ import type { EvaluateResponse } from "@/lib/types";
  */
 export default function Home() {
   const [result, setResult] = useState<EvaluateResponse | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  async function handleDownloadPdf() {
+    if (!result) return;
+    setDownloadingPdf(true);
+    setPdfError(null);
+    try {
+      await downloadCompanyPdfReport(result.company_id);
+    } catch (err) {
+      setPdfError(formatApiError(err));
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-gray-50 p-6 md:p-10">
@@ -75,6 +91,18 @@ export default function Home() {
                       {(result.default_probability * 100).toFixed(1)}%
                     </p>
                   </div>
+                  <button
+                    onClick={handleDownloadPdf}
+                    disabled={downloadingPdf}
+                    className="w-full rounded-md bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {downloadingPdf ? "Preparing PDF..." : `${"📄"} Download PDF Report`}
+                  </button>
+                  {pdfError && (
+                    <pre className="whitespace-pre-wrap rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-700">
+                      {pdfError}
+                    </pre>
+                  )}
                 </div>
               </div>
             </section>

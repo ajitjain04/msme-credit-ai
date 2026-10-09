@@ -54,6 +54,36 @@ export async function getFairnessAudit(): Promise<FairnessAuditResponse> {
 }
 
 /**
+ * GET /api/v1/company/{company_id}/report/pdf -- downloads the one-page
+ * PDF credit report and triggers a real browser file download.
+ *
+ * Standard browser pattern for a blob response: fetch the PDF bytes as a
+ * Blob, wrap them in a temporary object URL, click a throwaway <a> tag
+ * pointed at that URL (this is what actually triggers the browser's
+ * "Save As" / downloads behaviour -- there's no other way to do this from
+ * JavaScript), then clean up both the link element and the object URL.
+ * Same end result as dashboard/app.py's st.download_button, just written
+ * out by hand since the browser has no built-in equivalent.
+ */
+export async function downloadCompanyPdfReport(companyId: string): Promise<void> {
+  const response = await apiClient.get(
+    `/api/v1/company/${encodeURIComponent(companyId)}/report/pdf`,
+    { responseType: "blob" }
+  );
+
+  const blob = new Blob([response.data], { type: "application/pdf" });
+  const objectUrl = window.URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = `credit_report_${companyId}.pdf`; // matches backend/main.py's filename exactly
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(objectUrl);
+}
+
+/**
  * Turns an unknown error from any of the calls above into one readable
  * message -- same pattern as dashboard/app.py's repeated
  * "API unreachable vs. API rejected the request" st.error handling, just

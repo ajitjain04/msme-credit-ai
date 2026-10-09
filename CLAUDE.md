@@ -139,10 +139,31 @@ Step 12b-2 complete: live-verified end-to-end in a real browser --
 form submission -> real model score -> gauge chart -> SHAP chart ->
 readable driver sentences, all rendering correctly.
 
+Step 12b-3 complete: added the PDF download button
+(`frontend/lib/api.ts`'s `downloadCompanyPdfReport()`), the Portfolio
+Overview page (`frontend/app/portfolio/page.tsx` +
+`components/PortfolioPieChart.tsx`), the Fairness Audit page
+(`frontend/app/fairness/page.tsx` -- no Streamlit equivalent existed),
+and a shared top nav bar in `frontend/app/layout.tsx`. Fixed a
+low-contrast bug on the Fairness Audit table: 4 `<td>`s had no explicit
+Tailwind text-color class, so they inherited `globals.css`'s
+`--foreground` variable, which flips near-white under
+`prefers-color-scheme: dark` while the page's hardcoded light
+backgrounds don't -- fixed with explicit `text-gray-900`. Live-verified
+end-to-end: PDF downloads match the backend report; Portfolio page shows
+live stats (28 companies, avg score 792, 75%/25%/0% Low/Medium/High) and
+a working donut + Refresh; Fairness Audit page correctly pairs DIR with
+actual default rate and lists excluded cohorts.
+
+**Step 12b complete.** The React/Next.js dashboard now has full feature
+parity with the Streamlit dashboard, matching the literature review's
+Table 10 architecture ("React/Next.js dashboard with Plotly
+visualisations").
+
 ## Upgrade sequence (agreed order, do not resequence without asking)
 1. ~~Step 12c: probability calibration~~ — complete.
 2. ~~Step 12d: fairness / disparate impact ratio (DIR) auditing~~ — complete.
 3. ~~Step 10b: PostgreSQL migration~~ — complete.
 4. ~~Step 12e: PDF report generator~~ — complete.
-5. **Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard) — in progress. Next: Step 12b-3 (PDF download button + Portfolio Overview + Fairness Audit pages in React).**
-6. Step 13: tests.
+5. ~~Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard)~~ — complete.
+6. **Step 13: tests — next.**
