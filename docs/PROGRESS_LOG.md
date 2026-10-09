@@ -5,6 +5,72 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 10: Database layer (SQLAlchemy + SQLite)
+
+### Completed
+- Created `backend/database.py`: SQLite engine pointed at
+  `data/processed/msme_credit.db` (confirmed `*.db` is already in
+  `.gitignore` from Step 1 — nothing new needed there), a shared
+  `Base` declarative class, and `get_db()`, the FastAPI yield-pattern
+  dependency Step 11's endpoints will use.
+- Created `backend/db_models.py` with two ORM models:
+  - `Company`: static profile (`company_id` PK, `company_name`,
+    firmographics — age/business_category/state/employee_count —
+    `created_at`).
+  - `Assessment`: one scoring event (`assessment_id` PK autoincrement, FK
+    to `company_id`, `assessed_at`, the full banking/GST/digital feature
+    snapshot, `default_probability`/`credit_score`/`risk_band`, and
+    `shap_top_drivers` as JSON). One Company → many Assessments.
+- Created `scripts/init_db.py` (new top-level folder): creates both tables
+  via `Base.metadata.create_all()`, samples 20 rows from
+  `data/processed/test.csv`, runs each through Step 8's `score_company()`
+  and Step 9's `explain_company()` unmodified, and inserts a Company +
+  Assessment row per row. Re-running it adds new Assessment rows to the
+  same 20 Companies rather than erroring or duplicating companies —
+  demonstrating the one-to-many "re-assessment history" design.
+- Verified the ORM wiring end-to-end (table creation, insert, foreign key,
+  relationship traversal both directions) on a **throwaway in-memory
+  SQLite database** — the real `data/processed/msme_credit.db` was never
+  touched by the assistant; `scripts/init_db.py` itself was not run.
+- Updated `CLAUDE.md`'s folder layout to mention the new `scripts/` folder,
+  and its current step.
+
+### Files created/changed
+- `backend/database.py`: created.
+- `backend/db_models.py`: created.
+- `scripts/init_db.py`: created.
+- `CLAUDE.md`: folder layout + current step updated.
+
+### Decisions made
+- **Important caveat documented in `scripts/init_db.py`:** `test.csv` has
+  no `company_id`/`company_name` (dropped before training on purpose) and
+  was saved without the original row index, so the 20 seeded companies'
+  IDs/names are clearly-labelled placeholders (`MSME-SEED-0001`, "Seed
+  Company 0001"), not real dataset IDs. `business_category`/`state`
+  **are** recovered exactly, though, by inverting
+  `model/artifacts/category_encodings.json`'s saved mapping — every
+  banking/GST/digital number and the model's actual probability/score/
+  SHAP explanation are real, only the name tag is a placeholder.
+  Firmographics (`age_of_business_years`, `business_category`, `state`,
+  `employee_count`) were kept on `Company` even though `age_of_business_
+  years` technically also drifts over time, per the explicit Company/
+  Assessment split requested.
+- Used SQLite's native `JSON` column type for `shap_top_drivers` rather
+  than a separate contributors table, since it's always read/written as
+  one self-contained blob per assessment, not queried column-by-column.
+- `check_same_thread=False` on the SQLite engine, since FastAPI can serve
+  a request's `get_db()` dependency on a different thread than the one
+  that created the engine; each request still gets its own `Session`.
+
+### Next step
+- Run `scripts/init_db.py` to actually seed the database, confirm the 20
+  companies/assessments look right, then Step 11: the FastAPI backend
+  (`backend/main.py`, `backend/schemas.py`, `backend/crud.py`) exposing
+  `score_company()`/`explain_company()` and the company assessment-history
+  endpoint over this database.
+
+---
+
 ## 2026-10-09 — Step 9: SHAP explanations (global + local)
 
 ### Completed

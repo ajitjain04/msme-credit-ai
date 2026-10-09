@@ -16,7 +16,8 @@ FastAPI + Pydantic, SQLAlchemy + SQLite, Streamlit, pytest.
 
 ## Folder layout
 data/ (generation + datasets), model/ (ML pipeline), backend/ (FastAPI),
-dashboard/ (Streamlit), tests/, docs/, notebooks/.
+dashboard/ (Streamlit), tests/, docs/, notebooks/, scripts/ (one-off setup
+scripts, e.g. database seeding).
 
 ## Coding rules
 - The developer is a beginner: add clear comments and docstrings, keep code simple.
@@ -28,6 +29,6 @@ dashboard/ (Streamlit), tests/, docs/, notebooks/.
   in the same format already used in that file.
 
 ## Current step
-Step 9 complete: SHAP explanations (`model/explainer.py`, global +
-local, `explain_company()`). Next: Step 10 (evaluation/reporting), then
-Step 11 (backend API) and Step 12 (dashboard).
+Step 10: database layer (`backend/database.py`, `backend/db_models.py`,
+`scripts/init_db.py`) written, not yet run. Next: run `scripts/init_db.py`
+to seed the DB, then Step 11 (backend API) and Step 12 (dashboard).
