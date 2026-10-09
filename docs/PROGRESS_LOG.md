@@ -5,6 +5,77 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 10b: PostgreSQL migration
+
+### Completed
+- Added `psycopg2-binary` to `requirements.txt` (confirmed `python-dotenv`
+  was already there from Step 1, and both packages were already present
+  in the venv).
+- Created `.env` (git-ignored — confirmed `.env` was already in
+  `.gitignore` from Step 1, no change needed) with a placeholder password,
+  and `.env.example` (committed, same content, visible placeholder) so a
+  teammate knows which variable to set without ever seeing a real
+  password.
+- Rewrote `backend/database.py`: loads `DATABASE_URL` from `.env` via
+  `python-dotenv`; if unset, prints a clear warning and falls back to the
+  original SQLite file (`data/processed/msme_credit.db`) instead of
+  crashing; prints exactly which database is in use at import time, with
+  the password masked via regex either way. No other logic changed —
+  `Base`, `get_db()`, and every ORM model/crud function/endpoint are
+  untouched and work identically against either database.
+- **Found and fixed a real version-specific bug while verifying (not
+  something the brief anticipated):** this environment's installed
+  SQLAlchemy (2.1.3) resolves a *bare* `postgresql://` URL to the newer
+  `psycopg` (v3) dialect by default, not `psycopg2` — even though
+  `psycopg2-binary` is what's actually installed and what the brief
+  specifies. Importing with a bare URL failed with
+  `ModuleNotFoundError: No module named 'psycopg'`. Fixed by making the
+  driver explicit in both `.env` and `.env.example`:
+  `postgresql+psycopg2://...` instead of `postgresql://...` — confirmed
+  this resolves to the `psycopg2` dialect correctly afterward.
+- **Verified both branches without running anything or touching the real
+  database:** with `.env` present, `backend.database` imports cleanly,
+  prints the masked Postgres URL, and `engine.dialect` correctly reports
+  `postgresql`/`psycopg2` (engine construction only — SQLAlchemy doesn't
+  actually connect until a query runs, and none was run, so no real
+  Postgres server was needed for this check). With `.env` temporarily
+  renamed away (simulating a teammate who hasn't set theirs up) and
+  restored immediately after, the SQLite fallback branch triggered
+  correctly with its warning message and the right file path. Confirmed
+  the real `data/processed/msme_credit.db`'s file size/timestamp
+  unchanged throughout, and that `backend.main` (all 4 existing
+  endpoints, including Step 12d's fairness one) still imports and
+  registers its routes correctly against the new `database.py`.
+
+### Files created/changed
+- `requirements.txt`: added `psycopg2-binary`.
+- `.env`: created (git-ignored, placeholder password).
+- `.env.example`: created (committed template).
+- `backend/database.py`: rewritten per the brief above.
+- `CLAUDE.md`: tech stack + current step + upgrade sequence updated.
+
+### Decisions made
+- Used `postgresql+psycopg2://` (explicit driver) rather than bare
+  `postgresql://` in both env files, specifically to avoid the dialect
+  -resolution bug found above — flagged as a "found, not assumed" issue
+  since the original brief's example URL used the bare form.
+- Password masking uses a small regex (`_mask_password()`) rather than a
+  third-party library, since the one thing it needs to hide is simple and
+  consistent (everything between the first `:` after `://` and the next
+  `@`).
+- `scripts/init_db.py` was deliberately left untouched — per the brief,
+  old SQLite data is not auto-migrated; re-running that script against
+  the new Postgres connection (once configured) reseeds it fresh, and the
+  SQLite file remains as an untouched backup/reference.
+
+### Next step
+- User installs/starts a local PostgreSQL server, creates the
+  `msme_credit` database, sets their real password in `.env`, then runs
+  `python scripts/init_db.py` to seed the new Postgres database fresh.
+  Then Step 12e: PDF report generator.
+
+---
+
 ## 2026-10-09 — Step 12d (live run): Fairness/DIR audit against real seeded data
 
 ### Completed
