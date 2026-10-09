@@ -5,6 +5,112 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 12b-1 (confirmed): react-plotly.js chosen; verified end-to-end
+
+### Completed
+- **Gauge/chart library decision resolved** (flagged as pending in the
+  entry below): chose `react-plotly.js` over `recharts` for the frontend
+  charting library, specifically to (a) match the literature review's
+  Table 10 spec of "Plotly visualisations" directly, rather than
+  substituting a different library, and (b) let the credit-score gauge
+  reuse the existing `go.Indicator(mode="gauge+number", gauge={...})`
+  config `dashboard/components/charts.py`'s `build_score_gauge()` already
+  defines from Step 12, instead of hand-rolling a gauge recharts has no
+  native primitive for.
+- **Verified end-to-end for real:** `npm install` and `npm run dev`
+  (Next.js dev server) both succeeded. The placeholder homepage's "Test
+  API Connection" button successfully called `GET /health` on the real
+  running FastAPI backend and displayed the live JSON response on the
+  page — confirming the frontend↔backend connection works before any
+  real UI gets built on top of it.
+
+### Next step
+- Add `plotly.js` + `react-plotly.js` to `frontend/package.json` (not yet
+  reflected there) and `npm install` them, then build the real
+  company-evaluation form + scorecard page, reusing the existing Python
+  gauge spec as the starting point for its React port.
+
+---
+
+## 2026-10-09 — Step 12b-1: Next.js frontend scaffolded
+
+### Completed
+- Created `frontend/`: a hand-written Next.js scaffold matching what
+  `create-next-app` would generate with TypeScript + Tailwind CSS + App
+  Router + ESLint selected — `package.json`, `tsconfig.json`,
+  `next-env.d.ts`, `next.config.mjs`, `tailwind.config.ts`,
+  `postcss.config.mjs`, `eslint.config.mjs` (flat config, matching
+  current `create-next-app` output), `app/layout.tsx`, `app/page.tsx`,
+  `app/globals.css`.
+- Added `axios` and `recharts` to `package.json`'s dependencies (not
+  installed — no `npm install` run, per instructions).
+- **Gauge chart library choice flagged, not decided:** the brief asked
+  for either a justification of `recharts` or an honest tradeoff if
+  `plotly.js`/`react-plotly.js` would genuinely fit better. Conclusion:
+  `recharts` is clearly the better, more idiomatic fit for the SHAP
+  tornado chart and the portfolio donut chart (both have natural recharts
+  equivalents — `BarChart` with two series, `PieChart` with
+  `innerRadius`). The credit-score **gauge** is the one exception worth
+  flagging: recharts has no native gauge primitive at all (would need a
+  hand-rolled `RadialBarChart` + custom SVG needle), whereas
+  `react-plotly.js` would let that one chart reuse almost the exact same
+  `go.Indicator(mode="gauge+number", gauge={...})` spec
+  `dashboard/components/charts.py`'s `build_score_gauge()` already
+  defines. Not resolved now — `recharts` was added as explicitly
+  requested; this tradeoff is flagged for the next sub-step (building the
+  real scorecard page), where the user can decide whether to also add
+  `plotly.js` + `react-plotly.js` just for that one chart.
+- Created `frontend/.env.local` (git-ignored) and
+  `frontend/.env.local.example` (committed template), both setting
+  `NEXT_PUBLIC_API_URL=http://localhost:8000` — the `NEXT_PUBLIC_`
+  prefix is required for Next.js to inline the variable into the
+  client-side JavaScript bundle at build time (explained in-file).
+- Updated the project root `.gitignore` with
+  `frontend/node_modules/`, `frontend/.next/`, `frontend/out/`,
+  `frontend/.env.local`, plus 2 standard Next.js extras
+  (`npm-debug.log*`, `.vercel`), all scoped under `frontend/`.
+- Built **only** the minimal placeholder homepage requested:
+  `app/page.tsx` is a `"use client"` component with a title, a short
+  explanatory note, and one button that calls `GET /health` via `axios`
+  and displays the raw JSON (or a clear connection-error message) on the
+  page — purely to prove frontend↔backend connectivity before any real
+  UI. No form, scorecard, or chart page built yet.
+- Skipped `next/font`'s default Google Fonts (Geist) setup that
+  `create-next-app` normally wires into `layout.tsx` — avoids a
+  build-time network dependency on Google Fonts for no real benefit yet;
+  noted in a comment as something to add back later if a specific look
+  is wanted. Also skipped the default `public/` placeholder SVG assets
+  (unused by our custom `page.tsx`, not part of the file list requested).
+
+### Files created/changed
+- `frontend/` (new): `package.json`, `tsconfig.json`, `next-env.d.ts`,
+  `next.config.mjs`, `tailwind.config.ts`, `postcss.config.mjs`,
+  `eslint.config.mjs`, `app/layout.tsx`, `app/page.tsx`,
+  `app/globals.css`, `.env.local`, `.env.local.example`.
+- `.gitignore`: added `frontend/` build-artifact/env entries.
+- `CLAUDE.md`: tech stack, folder layout, current step updated.
+
+### Decisions made
+- Verified Node (v22.14.0) and npm (11.6.2) are available in this
+  environment before scaffolding, but did NOT run `npm install` or
+  `npm run dev`, per instructions.
+- Used Tailwind CSS v3-style explicit config (`tailwind.config.ts` +
+  `postcss.config.mjs` + `@tailwind` directives in `globals.css`) rather
+  than Tailwind v4's newer CSS-first/no-config-file approach some very
+  recent `create-next-app` versions default to — the brief explicitly
+  listed `tailwind.config` among the expected files, and an explicit
+  config file is more beginner-readable than v4's implicit setup.
+
+### Next step
+- User runs `npm install` then `npm run dev` inside `frontend/`, confirms
+  the placeholder page loads and the "Test API Connection" button
+  successfully reaches the FastAPI backend's `/health` endpoint (backend
+  must be running separately). Then the next Step 12b sub-step: the real
+  company-evaluation form + scorecard page, including the gauge-library
+  decision flagged above.
+
+---
+
 ## 2026-10-09 — Step 12e (complete): PDF report generator, live-verified
 
 ### Completed

@@ -13,12 +13,19 @@ a credit score (300–900), assign risk bands, and explain each score with SHAP.
 ## Tech stack
 Python 3.11, pandas, scikit-learn, XGBoost/LightGBM, SHAP, Optuna,
 FastAPI + Pydantic, SQLAlchemy + PostgreSQL (SQLite fallback if
-`DATABASE_URL` isn't set — see `backend/database.py`), Streamlit, pytest.
+`DATABASE_URL` isn't set — see `backend/database.py`), Streamlit (being
+replaced by the Next.js frontend, Step 12b), pytest. Frontend (in
+progress): Next.js 15 + React 19 + TypeScript, App Router, Tailwind CSS,
+axios, react-plotly.js (chosen over recharts -- matches the literature
+review's "Plotly visualisations" spec and reuses the existing Python
+gauge config from Step 12; `plotly.js`/`react-plotly.js` still need
+adding to `frontend/package.json`).
 
 ## Folder layout
 data/ (generation + datasets), model/ (ML pipeline), backend/ (FastAPI),
-dashboard/ (Streamlit), tests/, docs/, notebooks/, scripts/ (one-off setup
-scripts, e.g. database seeding).
+dashboard/ (Streamlit — being replaced), frontend/ (Next.js, replaces
+dashboard/), tests/, docs/, notebooks/, scripts/ (one-off setup scripts,
+e.g. database seeding).
 
 ## Coding rules
 - The developer is a beginner: add clear comments and docstrings, keep code simple.
@@ -98,10 +105,29 @@ from both the dashboard button and the API directly, with correct
 score/risk-band/probability, readable SHAP driver sentences (decoded
 category/state names included), and the corrected footer.
 
+Step 12b-1: Next.js frontend scaffolded (frontend/) -- TypeScript, App
+Router, Tailwind, ESLint, axios added to package.json. Only a placeholder
+homepage built so far (a button that calls GET /health and shows the raw
+response) to prove frontend<->backend connectivity before any real UI.
+Live-verified end-to-end: `npm install` and `npm run dev` succeeded, and
+the placeholder homepage's health-check button successfully called the
+real FastAPI `GET /health` and displayed the live JSON response.
+
+GAUGE CHART DECISION RESOLVED: react-plotly.js chosen over recharts --
+recharts has no native gauge primitive (would need a hand-rolled
+RadialBarChart + custom SVG needle), while react-plotly.js lets the
+credit-score gauge reuse almost the exact same
+`go.Indicator(mode="gauge+number", gauge={...})` spec the Python
+dashboard already has, and matches the literature review's Table 10
+"Plotly visualisations" spec. Not yet actioned: `frontend/package.json`
+still lists `recharts`, not `plotly.js`/`react-plotly.js` -- swapping
+that in (and running `npm install`) is the next sub-step, before building
+the real company-evaluation form + scorecard page.
+
 ## Upgrade sequence (agreed order, do not resequence without asking)
 1. ~~Step 12c: probability calibration~~ — complete.
 2. ~~Step 12d: fairness / disparate impact ratio (DIR) auditing~~ — complete.
 3. ~~Step 10b: PostgreSQL migration~~ — complete.
 4. ~~Step 12e: PDF report generator~~ — complete.
-5. **Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard) — next.**
+5. **Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard) — in progress, sub-step 1 of N done.**
 6. Step 13: tests.
