@@ -160,10 +160,30 @@ parity with the Streamlit dashboard, matching the literature review's
 Table 10 architecture ("React/Next.js dashboard with Plotly
 visualisations").
 
+**Step 13 complete: pytest test suite.** Added `tests/test_scoring.py`
+(boundary precision, risk-band classification, `score_company()`
+consistency), `tests/test_calibration.py` (range + monotonicity),
+`tests/conftest.py` (shared throwaway in-memory SQLite `client` fixture),
+and `tests/test_api.py` (health, evaluate valid/invalid, company lookup,
+portfolio percentages, fairness shape) -- 30 tests, all passing.
+
+Real bug found by the suite on first run: `model/explainer.py`'s
+`explain_company()` crashed (`float(None)`) building a SHAP driver's
+display value for any GST-unregistered company (~15% of the realistic
+population) whenever a GST feature ranked among its top drivers --
+`POST /api/v1/evaluate` 500'd. Fixed by propagating `Optional[float]`
+through `model/explainer.py` (new `_safe_feature_value()`),
+`model/report_generator.py` (`format_driver_value()` now shows "Not
+available (GST not registered)"), `backend/schemas.py`'s
+`ShapDriver.value`, and `frontend/lib/types.ts` -- the React/PDF
+rendering layers needed no changes since they already only consumed
+`display_value`, never the raw `value`.
+
 ## Upgrade sequence (agreed order, do not resequence without asking)
 1. ~~Step 12c: probability calibration~~ — complete.
 2. ~~Step 12d: fairness / disparate impact ratio (DIR) auditing~~ — complete.
 3. ~~Step 10b: PostgreSQL migration~~ — complete.
 4. ~~Step 12e: PDF report generator~~ — complete.
 5. ~~Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard)~~ — complete.
-6. **Step 13: tests — next.**
+6. ~~Step 13: tests~~ — complete.
+7. **Step 14: Docker + deployment — next.**

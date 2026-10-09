@@ -72,19 +72,29 @@ class ShapDriver(BaseModel):
     contributors)."""
 
     feature: str
-    value: float
+    value: Optional[float] = Field(
+        default=None,
+        description=(
+            "This feature's raw value for this company. None if it was genuinely "
+            "missing -- in practice only the 3 GST columns (and the derived "
+            "gst_to_bank_turnover_ratio) for a GST-unregistered company (see "
+            "model.explainer._safe_feature_value()). Always prefer `display_value` "
+            "below for showing this to a user -- it already handles None."
+        ),
+    )
     shap_value: float
     display_value: str = Field(
         ...,
         description=(
             "Human-readable version of `value`, ready to show directly to a user. "
             "For business_category_encoded/state_encoded this is the decoded category/state "
-            "name (e.g. 'retail', not '2.00'); every other feature is just `value` formatted "
-            "to 2 decimal places. Computed by backend/main.py via "
-            "model.report_generator.format_driver_value() -- the exact same decoding logic "
-            "the PDF report uses -- so the API, the React dashboard, the PDF, and the "
-            "Streamlit dashboard all show identical text for these two features instead of "
-            "each one re-implementing the same category_encodings.json lookup separately."
+            "name (e.g. 'retail', not '2.00'); for a missing GST value this is "
+            "'Not available (GST not registered)', never a crash or a literal 'None'; "
+            "every other feature is just `value` formatted to 2 decimal places. Computed "
+            "by backend/main.py via model.report_generator.format_driver_value() -- the "
+            "exact same decoding logic the PDF report uses -- so the API, the React "
+            "dashboard, the PDF, and the Streamlit dashboard all show identical text "
+            "instead of each one re-implementing the same logic separately."
         ),
     )
 

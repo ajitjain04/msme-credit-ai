@@ -31,7 +31,7 @@ import sys
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from reportlab.lib.colors import HexColor, black, white
 from reportlab.lib.pagesizes import A4
@@ -72,8 +72,24 @@ _ENCODED_FEATURE_DECODERS: dict[str, dict[int, str]] = {
     "state_encoded": {code: name for name, code in _CATEGORY_ENCODINGS["state"].items()},
 }
 
+# These 4 features are the ONLY ones that can ever be missing (None),
+# and only for the SAME reason every time: the company has no GST
+# registration (Step 5's design -- see docs/data_dictionary.md section
+# 3: the 3 raw GST columns are intentionally left empty for an
+# unregistered company, and gst_to_bank_turnover_ratio is derived FROM
+# annual_turnover_gst, so it's missing for the identical reason). Reusing
+# has_gst_registration's existing meaning here, rather than inventing a
+# new "why is this missing" concept, is exactly why a bare "missing" check
+# can safely map to this one specific message below.
+_GST_NULLABLE_FEATURES = {
+    "gst_filing_regularity_score",
+    "annual_turnover_gst",
+    "gst_filing_delay_days_avg",
+    "gst_to_bank_turnover_ratio",
+}
 
-def format_driver_value(feature_name: str, value: float) -> str:
+
+def format_driver_value(feature_name: str, value: Optional[float]) -> str:
     """Formats one driver's raw value for display.
 
     business_category_encoded/state_encoded are decoded back to their
@@ -81,6 +97,15 @@ def format_driver_value(feature_name: str, value: float) -> str:
     model/artifacts/category_encodings.json -- see
     _ENCODED_FEATURE_DECODERS above. Every other feature is shown as a
     plain number, exactly as before.
+
+    MISSING VALUES (value is None): model/explainer.py's
+    _safe_feature_value() returns None instead of raising when a
+    feature's raw value was genuinely missing -- in practice only the 4
+    GST-related features in _GST_NULLABLE_FEATURES above, for a
+    GST-unregistered company. Rather than show a crash or a literal
+    "None"/"nan", this returns a message that tells a reader WHY the
+    value is missing, reusing has_gst_registration's existing meaning
+    instead of inventing new logic.
 
     Fallback: if an encoded value somehow isn't in the lookup (shouldn't
     happen in practice -- the model only ever produces codes it was
@@ -98,6 +123,11 @@ def format_driver_value(feature_name: str, value: float) -> str:
     into this same function instead of maintaining two copies of the
     same decoding logic.
     """
+    if value is None:
+        if feature_name in _GST_NULLABLE_FEATURES:
+            return "Not available (GST not registered)"
+        return "Not available"
+
     decoder = _ENCODED_FEATURE_DECODERS.get(feature_name)
     if decoder is not None:
         code = int(round(value))
@@ -162,7 +192,12 @@ def _draw_driver_section(
     for driver in drivers[:TOP_DRIVERS_SHOWN]:
         feature_name = driver["feature"]
         label = feature_label(feature_name)
-        value = float(driver["value"])
+        # Deliberately NOT float(driver["value"]) -- that crashes when a
+        # GST-unregistered company's driver value is None (see
+        # model/explainer.py's _safe_feature_value()). Pass it through
+        # as-is; format_driver_value() is the one place that knows how
+        # to handle None safely.
+        value = driver["value"]
         shap_value = float(driver["shap_value"])
         value_display = format_driver_value(feature_name, value)
 

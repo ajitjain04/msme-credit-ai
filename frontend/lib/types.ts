@@ -10,7 +10,11 @@
 // backend/schemas.py: ShapDriver
 export interface ShapDriver {
   feature: string;
-  value: number;
+  // null if this feature was genuinely missing for this company (in
+  // practice: a GST column for a GST-unregistered company). Always use
+  // display_value below for showing this to a user -- it already
+  // handles null (e.g. "Not available (GST not registered)").
+  value: number | null;
   shap_value: number;
   // Human-readable version of `value` -- already decoded server-side
   // (business_category_encoded/state_encoded show a real name like

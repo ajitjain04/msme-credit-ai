@@ -55,7 +55,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 import matplotlib
 
@@ -228,6 +228,40 @@ def _coerce_to_series(features: Union[dict, pd.Series, pd.DataFrame]) -> pd.Seri
     return row
 
 
+def _safe_feature_value(value: Any) -> Optional[float]:
+    """Converts one feature's raw value to float for display in a SHAP
+    driver dict, WITHOUT crashing on a missing value.
+
+    The 3 GST columns (gst_filing_regularity_score, annual_turnover_gst,
+    gst_filing_delay_days_avg) and the derived gst_to_bank_turnover_ratio
+    are intentionally missing for a GST-unregistered company (Step 5's
+    design -- see docs/data_dictionary.md section 3): the live API's
+    backend/main.py builds that row with a Python `None` for these,
+    while reading the real training CSV gives `float('nan')` instead --
+    this handles BOTH representations the same way, since they mean the
+    exact same thing here.
+
+    `float(None)` raises TypeError (the bug this function fixes -- see
+    docs/PROGRESS_LOG.md's Step 13 entry); `float(float('nan'))` would
+    have silently "succeeded" into a NaN that downstream JSON/display
+    code still can't show sensibly. Returning `None` instead lets every
+    downstream consumer (backend/schemas.py's ShapDriver, model/
+    report_generator.py's format_driver_value()) treat "missing" as one
+    explicit, deliberate value instead of a crash or a literal "nan".
+
+    This ONLY affects what gets stored for DISPLAY -- it does not touch
+    the SHAP value itself, which is computed separately (and correctly,
+    via the imputed/transformed array) regardless of what this returns.
+    """
+    if value is None:
+        return None
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if np.isnan(numeric_value) else numeric_value
+
+
 def explain_company(
     features: Union[dict, pd.Series, pd.DataFrame], top_n: int = TOP_N_CONTRIBUTORS
 ) -> dict[str, Any]:
@@ -243,12 +277,19 @@ def explain_company(
         "base_value_logit": float,              # SHAP's starting point (log-odds), before this company's features are added
         "sum_shap_plus_base_logit": float,       # base_value_logit + sum of every feature's SHAP value below
         "top_positive_contributors": [           # push default probability UP (risk up, score down)
-            {"feature": str, "value": <company's raw value>, "shap_value": float}, ...
+            {"feature": str, "value": <company's raw value, or None if missing>, "shap_value": float}, ...
         ],
         "top_negative_contributors": [           # push default probability DOWN (risk down, score up)
-            {"feature": str, "value": <company's raw value>, "shap_value": float}, ...
+            {"feature": str, "value": <company's raw value, or None if missing>, "shap_value": float}, ...
         ],
       }
+
+    "value" is None for a feature that was genuinely missing for this
+    company -- in practice only the 3 nullable GST columns (and the
+    derived gst_to_bank_turnover_ratio) for a GST-unregistered company,
+    see _safe_feature_value() above. The SHAP value itself is still
+    computed correctly in that case (via the imputed/transformed array);
+    only the raw display value is None.
 
     SHAP values here are in LOG-ODDS space, matching the linear model's raw
     output (see the module docstring's "why LinearExplainer" section) --
@@ -268,7 +309,7 @@ def explain_company(
     probability = float(_MODEL.predict_proba(X_raw)[:, 1][0])
 
     contributions = [
-        {"feature": feat, "value": float(row[feat]), "shap_value": float(sv)}
+        {"feature": feat, "value": _safe_feature_value(row[feat]), "shap_value": float(sv)}
         for feat, sv in zip(FEATURE_COLUMNS, shap_row)
     ]
     positive = sorted(

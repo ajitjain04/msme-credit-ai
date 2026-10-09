@@ -5,6 +5,88 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 13: pytest test suite (model + API layers)
+
+### Completed
+- **`tests/test_scoring.py`**: `probability_to_score()` boundary precision
+  (exact equality at the 0.20->750 and 0.50->600 boundaries, per
+  `model/scoring.py`'s own "EXACT, not approximate" docstring guarantee),
+  monotonicity, and clipping of out-of-range inputs; `assign_risk_band()`
+  classification at and around both boundaries (750/749, 600/599);
+  `score_company()` end-to-end on 3 real rows from `data/processed/test.csv`
+  (via `model.train.load_data()`), checking internal consistency (score
+  matches `probability_to_score()`, risk_band matches `assign_risk_band()`)
+  rather than hardcoded scores.
+- **`tests/test_calibration.py`**: `apply_calibration()` stays in `[0, 1]`
+  for `[0.0, 0.3, 0.7, 1.0]`, and is monotonic across a fine increasing
+  sequence of raw probabilities -- a real property Platt scaling must
+  satisfy.
+- **`tests/conftest.py`**: shared `client` fixture -- `TestClient` wired to
+  a throwaway, in-memory SQLite database via `StaticPool` +
+  `dependency_overrides` on `get_db`, recreated fresh per test. The real
+  PostgreSQL database is never touched by any test.
+- **`tests/test_api.py`**: `GET /health`; `POST /api/v1/evaluate` with
+  valid data (well-formed response, non-empty driver lists) and invalid
+  data (422); `GET /api/v1/company/{id}` found (matches submitted data)
+  and not-found (404); `GET /api/v1/analytics/portfolio` (risk-band
+  percentages sum to ~100); `GET /api/v1/analytics/fairness` (response
+  shape only, no specific DIR values asserted).
+- **30 tests total**, all passing on the user's actual run.
+
+### Real bug found by the test suite on first run
+Writing a second, risk-varied company for the portfolio test, an initial
+GST-unregistered (`has_gst_registration: False`) variant crashed
+`POST /api/v1/evaluate` with `TypeError: float() argument must be a
+string or a real number, not 'NoneType'`.
+
+Root cause: `backend/main.py`'s `_build_feature_row()` puts Python `None`
+(not `np.nan`) into the 3 nullable GST columns for an unregistered
+company. The model's imputer pipeline tolerates that fine, but
+`model/explainer.py`'s `explain_company()` separately did
+`float(row[feat])` when building each SHAP driver's display `"value"` --
+`float(None)` raises. Since GST discipline is one of the label's main
+risk signals, any GST feature landing among a company's top SHAP drivers
+would crash the live API -- affecting roughly 15% of the realistic
+population (every unregistered MSME), not a rare edge case.
+
+**Fixed** by propagating "this value is genuinely missing" as an
+explicit `None` through the whole chain instead of crashing or leaking a
+literal "None"/"nan" into the UI:
+- `model/explainer.py`: new `_safe_feature_value()` helper returns `None`
+  instead of raising for a missing/NaN value (SHAP's own math is
+  untouched -- this only affects what's stored for display).
+- `model/report_generator.py`: `format_driver_value()` now returns
+  `"Not available (GST not registered)"` for the 4 features that can
+  only ever be missing for that one reason (the 3 raw GST columns + the
+  derived `gst_to_bank_turnover_ratio`) -- reusing `has_gst_registration`
+  's existing meaning (Step 5's design) rather than inventing new logic.
+  Also fixed `_draw_driver_section()`'s own eager `float(driver["value"])`
+  cast, which would have crashed the same way.
+- `backend/schemas.py`: `ShapDriver.value` changed from `float` to
+  `Optional[float] = None`, so the API can actually serialize a missing
+  value instead of raising a validation error.
+- `frontend/lib/types.ts`: `ShapDriver.value` changed to `number | null`
+  for type correctness. **No rendering changes were needed** -- the React
+  pages and PDF generator already only ever display `display_value`
+  (never the raw `value`), a side effect of the earlier
+  `business_category_encoded` decoding fix, so they were automatically
+  safe once the backend started returning a sensible string.
+
+Verified (not via `pytest`, per instructions): confirmed `explain_company()`
+now returns `value: None` for all 4 GST features on an unregistered test
+company instead of crashing, confirmed `format_driver_value()` produces
+the right message for both the GST and generic-missing cases, and forced
+a GST feature into the top-5 driver slot to confirm the API's display
+-value decoration and real PDF generation both handle it end-to-end.
+
+### Final result
+30/30 tests passing (confirmed by the user running `pytest tests/ -v`).
+
+### Next step
+Step 14: Docker + deployment.
+
+---
+
 ## 2026-10-09 — Step 12b-3: PDF button, Portfolio & Fairness pages (React) -- Step 12b complete
 
 ### Completed
