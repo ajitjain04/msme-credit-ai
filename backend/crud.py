@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.db_models import Assessment, Company
+from backend.db_models import Assessment, Company, FairnessAuditLog
 
 
 def create_company_and_assessment(
@@ -61,12 +61,20 @@ def get_company_with_history(db: Session, company_id: str) -> Optional[Company]:
     return company
 
 
+def get_all_assessments(db: Session) -> list[Assessment]:
+    """Returns every Assessment row in the database -- the one shared
+    query `get_portfolio_stats()` and Step 12d's `model.fairness.
+    compute_dir_audit()` both build on, so the underlying SQL lives in
+    exactly one place."""
+    return list(db.execute(select(Assessment)).scalars().all())
+
+
 def get_portfolio_stats(db: Session) -> dict[str, Any]:
     """Aggregates risk-band counts/percentages and the average credit
     score across EVERY assessment in the database (every re-assessment
     counts separately, since a company's risk band can change between
     assessments -- see PortfolioAnalyticsResponse's docstring)."""
-    assessments = db.execute(select(Assessment)).scalars().all()
+    assessments = get_all_assessments(db)
     total_assessments = len(assessments)
 
     if total_assessments == 0:
@@ -101,3 +109,39 @@ def get_portfolio_stats(db: Session) -> dict[str, Any]:
         "high_risk_pct": band_counts["High Risk"] / total_assessments * 100,
         "average_credit_score": average_credit_score,
     }
+
+
+def save_fairness_audit_batch(
+    db: Session, audit_rows: list[dict[str, Any]]
+) -> list[FairnessAuditLog]:
+    """Inserts a batch of FairnessAuditLog rows -- ONE periodic snapshot,
+    all sharing the same `computed_at` -- in a single commit. Each dict in
+    `audit_rows` must contain every FairnessAuditLog field except `id`
+    (auto-filled).
+
+    Used by model.fairness.compute_dir_audit() once per audit run; never
+    called per-assessment (see backend/db_models.py's FairnessAuditLog
+    docstring for why)."""
+    logs = [FairnessAuditLog(**row) for row in audit_rows]
+    db.add_all(logs)
+    db.commit()
+    for log in logs:
+        db.refresh(log)
+    return logs
+
+
+def get_latest_fairness_audit(db: Session) -> list[FairnessAuditLog]:
+    """Returns every row from the MOST RECENT `computed_at` batch (the
+    latest periodic fairness snapshot, across all cohort dimensions
+    together) -- or an empty list if no audit has ever been run."""
+    latest_computed_at = db.execute(
+        select(func.max(FairnessAuditLog.computed_at))
+    ).scalar_one_or_none()
+    if latest_computed_at is None:
+        return []
+
+    return list(
+        db.execute(
+            select(FairnessAuditLog).where(FairnessAuditLog.computed_at == latest_computed_at)
+        ).scalars().all()
+    )

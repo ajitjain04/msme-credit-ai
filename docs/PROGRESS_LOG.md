@@ -5,6 +5,149 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 12d (live run): Fairness/DIR audit against real seeded data
+
+### Completed
+- Ran `GET /api/v1/analytics/fairness` for real against the 21 seeded
+  assessments in `data/processed/msme_credit.db` (the mechanism itself —
+  `model/fairness.py`'s `compute_dir_audit()`, the `FairnessAuditLog`
+  table, the endpoint — was added per the literature review's Gap 4; see
+  the previous entry below for the implementation).
+- **Live results:**
+  - **Flagged:** `state='Punjab'`, DIR = 0.741 (vs. reference
+    `Maharashtra`), actual default rate **0.0%** (n=6, 6/6 known
+    outcomes).
+  - **Flagged:** `business_category='trading'`, DIR = 0.794 (vs.
+    reference `retail`), actual default rate **0.0%** (n=15, 15/15 known
+    outcomes).
+  - **Excluded** 6 cohorts for `n < 5` (too small to audit reliably):
+    Tamil Nadu (3), Bihar (3), Andhra Pradesh (3), Telangana (3),
+    Rajasthan (1), food (3).
+
+### Decisions made / limitations noted for the final report
+- **Sample size limitation:** both flagged cohorts (n=6, n=15) are too
+  small to distinguish genuine model bias from ordinary sampling noise.
+  The audit mechanism is confirmed working correctly end-to-end — it
+  correctly pairs each DIR with its cohort's actual default rate per the
+  paper's Sect 3.5.2 methodology, never reporting DIR alone — but drawing
+  real fairness conclusions from these specific numbers would need a
+  production-scale dataset with hundreds of assessments per cohort, which
+  this 21-company seeded database does not provide. This run validates
+  the *mechanism*, not a fairness conclusion about the model itself.
+- **Reaffirmed interpretation caveat:** `state`/`business_category` are
+  behavioural/circumstantial proxies, not protected characteristics —
+  this synthetic dataset contains no gender, religion or caste data at
+  all. This audit shows whether the model penalizes risk-relevant cohort
+  differences, not protected-attribute discrimination directly.
+
+### Next step
+- Proceed to Step 10b: PostgreSQL migration. Re-run this fairness audit
+  periodically as more assessments accumulate, since both flags above are
+  provisional pending a larger sample.
+
+---
+
+## 2026-10-09 — Step 12d: Fairness auditing (Disparate Impact Ratio)
+
+### Completed
+- Added `FairnessAuditLog` to `backend/db_models.py`: a periodic
+  AGGREGATE snapshot table (no foreign key to Assessment/Company — a row
+  describes a whole cohort at one moment, not one scoring event). Fields:
+  `id`, `computed_at`, `cohort_dimension`, `cohort_value`,
+  `reference_dimension_value`, `group_approval_rate`,
+  `reference_approval_rate`, `dir_value` (nullable), plus
+  `group_actual_default_rate` (nullable), `cohort_size`,
+  `cohort_size_with_known_outcome` (added beyond the literal spec,
+  to make the known-vs-unknown-ground-truth distinction explicit in the
+  schema itself, not just the printed output), `flagged_low_dir`.
+- Created `model/fairness.py`'s `compute_dir_audit(db)`: groups
+  assessments by `state` and `business_category` (via `Company`),
+  picks each dimension's largest cohort as the reference group, computes
+  DIR (`group_approval_rate / reference_approval_rate`, "approve" =
+  NOT High Risk) for every other eligible cohort, flags any DIR < 0.80,
+  and ALWAYS prints the cohort's actual default rate alongside a flag
+  (never DIR alone), per the literature review's Sect 3.5.2 methodology.
+  Cohorts below `MIN_COHORT_SIZE` (5) are excluded and reported
+  separately, not scored.
+- **Ground truth recovery**: since Assessment rows store predictions,
+  not outcomes, `load_ground_truth_lookup()` rebuilds a feature
+  "fingerprint" (every banking/GST/digital value, NaN/None-normalized,
+  rounded to 6dp) for every `data/processed/test.csv` row and matches
+  each Assessment back to it. A match (companies seeded by
+  `scripts/init_db.py`, whose feature values were copied unchanged from
+  test.csv) recovers a real `credit_default_status`; no match (e.g. a
+  company scored live via the API) means "ground truth unknown" —
+  excluded from `group_actual_default_rate` but still counted in
+  `group_approval_rate`/DIR, exactly as specified.
+- Added `backend/crud.py` functions: `get_all_assessments()` (factored
+  out of `get_portfolio_stats()`'s existing query so both it and the new
+  fairness code share one query — "reuse existing patterns, don't
+  duplicate SQL"), `save_fairness_audit_batch()`,
+  `get_latest_fairness_audit()`.
+- Added `GET /api/v1/analytics/fairness` to `backend/main.py`: triggers a
+  fresh (uncached) `compute_dir_audit()` run, returns each eligible
+  cohort's DIR/default rate/flag/size plus the list of excluded small
+  cohorts. Added `FairnessCohortAudit`/`ExcludedCohort`/
+  `FairnessAuditResponse` to `backend/schemas.py`.
+- **The literature review's caveat is stated explicitly** as the top
+  comment in `model/fairness.py` (and echoed in `FairnessAuditLog`'s
+  docstring): `state`/`business_category` are risk-relevant
+  behaviours/circumstances, not protected characteristics like gender or
+  religion (which this synthetic dataset doesn't contain) — a flagged
+  cohort is a prompt to check its actual default rate, not proof of
+  discrimination by itself.
+- **Verified end-to-end on a throwaway in-memory database** (never the
+  real `data/processed/msme_credit.db`, confirmed unchanged afterward):
+  built 3 states × 2 categories of fake companies with varying risk
+  bands, including one real `test.csv` row (with a known default) seeded
+  in as an Assessment to test ground-truth matching. Result matched
+  expectations exactly: `Bihar` correctly flagged (DIR 0.190 vs.
+  reference `Maharashtra`) with its real 100% actual default rate shown
+  alongside (1 of 6 assessments had a known outcome); `Delhi` (n=3) and
+  `services` (n=3) correctly excluded as too small. Also confirmed via a
+  separate check that Pydantic's `from_attributes` correctly converts a
+  list of ORM-like objects into `FairnessCohortAudit` instances inside
+  the nested `FairnessAuditResponse`. `backend.main` imports cleanly with
+  the new route registered.
+
+### Files created/changed
+- `backend/db_models.py`: added `FairnessAuditLog`.
+- `backend/crud.py`: added `get_all_assessments()`,
+  `save_fairness_audit_batch()`, `get_latest_fairness_audit()`;
+  `get_portfolio_stats()` refactored to reuse `get_all_assessments()`.
+- `model/fairness.py`: created.
+- `backend/schemas.py`: added `FairnessCohortAudit`, `ExcludedCohort`,
+  `FairnessAuditResponse`.
+- `backend/main.py`: added `GET /api/v1/analytics/fairness`.
+- `CLAUDE.md`: current step + upgrade sequence updated.
+- `model/scoring.py`, `model/explainer.py`, `model/calibration.py`:
+  confirmed untouched (hashed before/after) — not part of this step, per
+  the brief.
+
+### Decisions made
+- "Reference group" is re-picked fresh on every audit run (the current
+  largest cohort), not fixed — it can change over time as more companies
+  get assessed, and `reference_dimension_value` records which one was
+  used for each specific snapshot.
+- The reference cohort itself is never scored against itself (no DIR=1.0
+  row) — only "every OTHER cohort in that dimension" gets a row, per the
+  brief.
+- `compute_dir_audit()`'s `min_cohort_size` defaults to 5 (not 1), so the
+  function is sensibly safe to call standalone without the caller having
+  to remember to pass a threshold; the API endpoint relies on that
+  default rather than re-specifying it.
+
+### Next step
+- User restarts the API server (`uvicorn backend.main:app --reload`) —
+  its existing `lifespan` startup hook calls `Base.metadata.create_all()`,
+  which will create the new `fairness_audit_logs` table automatically,
+  no manual migration needed. Then exercise
+  `GET /api/v1/analytics/fairness` against the real seeded data, review
+  any flagged cohorts' actual default rates, and proceed to Step 10b:
+  PostgreSQL migration.
+
+---
+
 ## 2026-10-09 — Step 12c (conclusion): Calibration adopted; skew confirmed real, not a bug
 
 ### Completed

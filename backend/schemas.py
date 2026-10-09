@@ -238,6 +238,60 @@ class CompanyHistoryResponse(BaseModel):
     assessments: list[AssessmentRecord]
 
 
+class FairnessCohortAudit(BaseModel):
+    """One cohort's Disparate Impact Ratio (DIR) result, as computed by
+    model.fairness.compute_dir_audit(). See
+    GET /api/v1/analytics/fairness's module docstring (backend/main.py)
+    and model/fairness.py for the full methodology and its important
+    interpretation caveat."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    cohort_dimension: str
+    cohort_value: str
+    reference_dimension_value: str
+    dir_value: Optional[float] = Field(
+        default=None,
+        description="DIR = this cohort's approval rate / the reference cohort's approval rate. "
+        "null only if the reference cohort's approval rate is exactly 0.",
+    )
+    group_actual_default_rate: Optional[float] = Field(
+        default=None,
+        description="This cohort's ACTUAL observed default rate, from ground-truth labels only. "
+        "null if no assessment in this cohort has a known outcome (e.g. all created via the live API). "
+        "A low dir_value must be read alongside this number, never alone.",
+    )
+    cohort_size: int = Field(..., description="Total assessments in this cohort (used for dir_value).")
+    cohort_size_with_known_outcome: int = Field(
+        ..., description="Subset of cohort_size with a KNOWN ground-truth outcome (used only for group_actual_default_rate)."
+    )
+    flagged_low_dir: bool = Field(..., description="True if dir_value < 0.80 (the four-fifths rule).")
+
+
+class ExcludedCohort(BaseModel):
+    """A cohort too small to audit reliably, excluded from the fairness
+    audit entirely (not scored, not saved)."""
+
+    cohort_dimension: str
+    cohort_value: str
+    cohort_size: int
+
+
+class FairnessAuditResponse(BaseModel):
+    """Response for GET /api/v1/analytics/fairness: a fresh, on-demand
+    Disparate Impact Ratio audit across the `state` and
+    `business_category` cohorts. NOT cached -- each call re-runs the
+    audit against the database's current assessments and saves a new
+    periodic snapshot (backend.db_models.FairnessAuditLog)."""
+
+    computed_at: datetime
+    min_cohort_size: int = Field(
+        ..., description="Cohorts with fewer than this many assessments were excluded as statistically unreliable."
+    )
+    audits: list[FairnessCohortAudit]
+    excluded_small_cohorts: list[ExcludedCohort] = Field(default_factory=list)
+
+
 class PortfolioAnalyticsResponse(BaseModel):
     """Response for GET /api/v1/analytics/portfolio: aggregate stats across
     every assessment in the database (not just distinct companies -- a

@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.database import Base
@@ -134,4 +134,81 @@ class Assessment(Base):
         return (
             f"<Assessment {self.assessment_id} for {self.company_id}: "
             f"score={self.credit_score} ({self.risk_band})>"
+        )
+
+
+class FairnessAuditLog(Base):
+    """Step 12d — ONE row = one cohort's Disparate Impact Ratio (DIR)
+    snapshot at one point in time (`computed_at`). See model/fairness.py
+    for the full methodology.
+
+    Unlike Assessment, these rows are NOT computed per-assessment -- they
+    are periodic, AGGREGATE snapshots across many assessments at once
+    (e.g. "every state's approval rate vs. Maharashtra's, as of right
+    now"). That's why this table has no foreign key to Assessment or
+    Company: a row describes a whole cohort at a moment in time, not one
+    company's one scoring event.
+
+    IMPORTANT INTERPRETATION CAVEAT (see model/fairness.py's module
+    docstring for the full explanation): `state` and `business_category`
+    are the cohort dimensions audited here because they're the closest
+    thing this dataset has to a protected-characteristic-style audit --
+    but they are risk-RELEVANT behaviours/circumstances, not protected
+    characteristics like gender or religion (which this synthetic dataset
+    doesn't contain at all). A flagged row here is a prompt to look
+    closer -- is the gap explained by a genuinely higher default rate in
+    that cohort, or not? -- not proof of unlawful discrimination.
+    """
+
+    __tablename__ = "fairness_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    computed_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.utcnow, nullable=False, index=True
+    )
+
+    # Which cohort this row describes, e.g. cohort_dimension="state",
+    # cohort_value="Bihar".
+    cohort_dimension: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    cohort_value: Mapped[str] = mapped_column(String, nullable=False)
+    # Which cohort WITHIN THE SAME DIMENSION was used as the reference
+    # group for this computation (the one with the most assessments,
+    # re-picked fresh every time this audit runs -- it can change over
+    # time as new companies are assessed).
+    reference_dimension_value: Mapped[str] = mapped_column(String, nullable=False)
+
+    group_approval_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    reference_approval_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    # DIR = group_approval_rate / reference_approval_rate (the literature
+    # review's Eq. 4). Nullable only in the edge case where the reference
+    # group's own approval rate is exactly 0 (the ratio is undefined).
+    dir_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # The cohort's ACTUAL observed default rate, from ground-truth labels
+    # ONLY (the seeded test-set companies in data/processed/test.csv) --
+    # NULL if no assessment in this cohort has a known outcome (e.g. a
+    # cohort made up entirely of companies created via the live API,
+    # which have no real historical outcome to check against). See
+    # model/fairness.py for why a low DIR must always be read alongside
+    # this number, not on its own.
+    group_actual_default_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Total assessments in this cohort -- used for group_approval_rate /
+    # dir_value above.
+    cohort_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Subset of cohort_size that has a KNOWN ground-truth outcome -- used
+    # ONLY for group_actual_default_rate above. Kept as its own column,
+    # separate from cohort_size, so this table itself makes the
+    # known-vs-unknown-outcome distinction explicit rather than silently
+    # mixing the two.
+    cohort_size_with_known_outcome: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # True if dir_value < 0.80 (the "four-fifths rule" -- see
+    # model/fairness.py's DIR_THRESHOLD).
+    flagged_low_dir: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience only
+        return (
+            f"<FairnessAuditLog {self.cohort_dimension}={self.cohort_value!r} "
+            f"DIR={self.dir_value} flagged={self.flagged_low_dir}>"
         )

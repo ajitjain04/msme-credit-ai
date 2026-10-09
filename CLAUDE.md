@@ -39,12 +39,19 @@ been distorting -- Step 8's original 58.9%/32.9% Medium/High split was
 the inflated, wrong one. `model/artifacts/model.joblib` and Step 8's
 `probability_to_score()` are both unchanged.
 
-Step 12c complete. Next: Step 12d (fairness/DIR auditing).
+Step 12d complete: fairness auditing (Disparate Impact Ratio). Added
+`model/fairness.py`'s `compute_dir_audit()`, a `FairnessAuditLog` table,
+2 new crud functions, and `GET /api/v1/analytics/fairness`. Live-run
+against the 21 real seeded assessments: flagged `Punjab` (DIR 0.741) and
+`trading` (DIR 0.794), both with 0.0% actual default rate but sample
+sizes (n=6, n=15) too small for a real conclusion -- mechanism confirmed
+working, flags are provisional pending more data. 6 cohorts excluded for
+n<5.
 
 ## Upgrade sequence (agreed order, do not resequence without asking)
 1. ~~Step 12c: probability calibration~~ — complete.
-2. **Step 12d: fairness / disparate impact ratio (DIR) auditing — next.**
-3. Step 10b: PostgreSQL migration (replaces the SQLite database layer).
+2. ~~Step 12d: fairness / disparate impact ratio (DIR) auditing~~ — complete.
+3. **Step 10b: PostgreSQL migration (replaces the SQLite database layer) — next.**
 4. Step 12e: PDF report generator.
 5. Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard).
 6. Step 13: tests.

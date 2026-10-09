@@ -18,6 +18,7 @@ from __future__ import annotations
 import sys
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -35,11 +36,13 @@ from backend.schemas import (  # noqa: E402
     CATEGORY_ENCODINGS,
     CompanyHistoryResponse,
     EvaluateResponse,
+    FairnessAuditResponse,
     MSMEInput,
     PortfolioAnalyticsResponse,
 )
 from model.config import FEATURE_COLUMNS  # noqa: E402
 from model.explainer import explain_company  # noqa: E402
+from model.fairness import MIN_COHORT_SIZE, compute_dir_audit  # noqa: E402
 from model.preprocessing import add_derived_ratios  # noqa: E402
 from model.scoring import score_company  # noqa: E402
 
@@ -232,3 +235,30 @@ def get_portfolio_analytics(db: Session = Depends(get_db)) -> PortfolioAnalytics
     score across every assessment in the database."""
     stats = crud.get_portfolio_stats(db)
     return PortfolioAnalyticsResponse(**stats)
+
+
+@app.get("/api/v1/analytics/fairness", response_model=FairnessAuditResponse)
+def get_fairness_audit(db: Session = Depends(get_db)) -> FairnessAuditResponse:
+    """Step 12d — runs a FRESH Disparate Impact Ratio (DIR) audit on
+    demand (not cached): every call re-scores `state` and
+    `business_category` cohorts against the database's CURRENT
+    assessments and saves a new periodic snapshot
+    (backend.db_models.FairnessAuditLog). Cohorts with fewer than
+    model.fairness.MIN_COHORT_SIZE assessments are excluded as
+    statistically unreliable (listed separately, not scored).
+
+    IMPORTANT: `state`/`business_category` are risk-relevant
+    behaviours/circumstances, not protected characteristics -- see
+    model/fairness.py's module docstring for the full methodology and
+    why a flagged cohort here is a prompt to look at its actual default
+    rate, not proof of discrimination on its own.
+    """
+    result = compute_dir_audit(db)
+    audit_logs = result["audit_logs"]
+
+    return FairnessAuditResponse(
+        computed_at=audit_logs[0].computed_at if audit_logs else datetime.utcnow(),
+        min_cohort_size=MIN_COHORT_SIZE,
+        audits=audit_logs,
+        excluded_small_cohorts=result["excluded_cohorts"],
+    )
