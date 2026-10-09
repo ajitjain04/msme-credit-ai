@@ -28,5 +28,6 @@ dashboard/ (Streamlit), tests/, docs/, notebooks/.
   in the same format already used in that file.
 
 ## Current step
-Step 8 complete: credit score (300-900) + risk band conversion
-(`model/scoring.py`). Next: Step 9 (SHAP explanations).
+Step 9 complete: SHAP explanations (`model/explainer.py`, global +
+local, `explain_company()`). Next: Step 10 (evaluation/reporting), then
+Step 11 (backend API) and Step 12 (dashboard).

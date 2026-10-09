@@ -5,6 +5,73 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 9: SHAP explanations (global + local)
+
+### Completed
+- Created `model/explainer.py` (written and reviewed — including isolated,
+  deleted scratch checks confirming the SHAP API calls and the
+  reconstruction math against the real model/data — not executed by the
+  assistant; the user ran it manually to see the example explanations).
+- Used `shap.LinearExplainer` (not `TreeExplainer`) since the winning Step
+  7 model is Logistic Regression — a linear model, so SHAP values are
+  exact/closed-form rather than approximated. `build_shap_explainer()` is
+  structured with a type-based branch so a future tree-model winner would
+  activate a `TreeExplainer` branch automatically, with no other code
+  changes needed.
+- **Global SHAP importance (top 7 by mean |SHAP value|):**
+  `bounce_count_last_6m` (0.2794), `age_of_business_years` (0.1733),
+  `account_vintage_months` (0.1712), `net_cash_margin` (0.1639),
+  `gst_filing_regularity_score` (0.1425), `has_gst_registration` (0.1417),
+  `cash_flow_volatility` (0.1189).
+- Saved `docs/images/shap_global_importance.png` (bar),
+  `docs/images/shap_summary_beeswarm.png` (importance + direction), and
+  `docs/images/shap_waterfall_example.png` (one example company).
+- `explain_company()`: the function Step 11 (API) and Step 12 (dashboard)
+  will call directly, returning top-5 positive/negative SHAP contributors
+  per company in a JSON-serializable dict.
+- **Local explanations confirmed intuitive:** riskiest companies driven up
+  mainly by `bounce_count_last_6m` (SHAP +1.73, +1.48) and negative
+  `net_cash_margin`; safest companies driven down by long
+  `account_vintage_months` and high `gst_filing_regularity_score`.
+- **Sanity check:** all 4 local explanations' (sum of SHAP values + base
+  value) exactly reconstructed the model's raw output, diff ~1e-16
+  (floating-point noise) — confirms the explainer is wired correctly.
+- **Validation of Step 5's engineered features:** the derived ratio
+  `net_cash_margin` (#4) far outranks the raw `avg_monthly_inflow` /
+  `avg_monthly_outflow` it's built from (both bottom-3) — confirms the
+  engineered ratio adds real value over the raw columns it was derived
+  from, not just redundant information.
+
+### Files created/changed
+- `model/explainer.py`: created.
+- `docs/images/shap_global_importance.png`,
+  `docs/images/shap_summary_beeswarm.png`,
+  `docs/images/shap_waterfall_example.png`: created.
+
+### Decisions made
+- SHAP values are computed in log-odds space (the linear model's raw
+  output), matching what `LinearExplainer` naturally explains; probability
+  and score are derived separately via `model/scoring.py` for display.
+- **Limitation noted for the final report:** `state_encoded` ranks #8
+  (0.0748) and `business_category_encoded` ranks #11 — both higher than
+  `docs/data_dictionary.md`'s design intent of a "very small effect" for
+  `state`. Likely cause: Step 5's label/ordinal encoding was chosen
+  reasoning about tree models (which split on thresholds regardless of
+  code value), but Logistic Regression — a linear model — won instead;
+  linear models treat an encoded integer as a real magnitude, so an
+  arbitrary alphabetical category ordering can manufacture spurious
+  importance that wouldn't exist with one-hot encoding. Documented as a
+  fairness/methodology discussion point; not fixed in-pipeline at this
+  stage (would require revisiting Step 5's encoding choice specifically
+  for linear models, e.g. one-hot or target encoding, if addressed later).
+
+### Next step
+- Step 10: write `model/evaluate.py` (or equivalent) consolidating final
+  model evaluation/reporting, then Step 11: backend API
+  (`backend/main.py`) exposing `score_company()` and `explain_company()`.
+
+---
+
 ## 2026-10-09 — Step 8: Credit score (300-900) + risk band conversion
 
 ### Completed
