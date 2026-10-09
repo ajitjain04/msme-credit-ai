@@ -69,6 +69,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from model.calibration import apply_calibration  # noqa: E402
 from model.config import FEATURE_COLUMNS, RISK_BANDS, TARGET_COLUMN  # noqa: E402
 from model.train import load_data  # noqa: E402
 
@@ -136,10 +137,11 @@ _MODEL = joblib.load(MODEL_PATH)
 
 
 def score_company(features: Union[dict, pd.Series, pd.DataFrame]) -> dict[str, Any]:
-    """Scores ONE company end-to-end: runs the tuned model to get a default
-    probability, converts it to a 300-900 credit score, and assigns a risk
-    band. This is the single function the backend API (Step 11) will call
-    per company, so its input/output shapes are deliberately simple:
+    """Scores ONE company end-to-end: runs the tuned model to get a RAW
+    default probability, CALIBRATES it (Step 12c), converts the calibrated
+    probability to a 300-900 credit score, and assigns a risk band. This
+    is the single function the backend API (Step 11) will call per
+    company, so its input/output shapes are deliberately simple:
 
     Input `features` -- any of:
       - a dict of {feature_name: value} (e.g. from a parsed API request)
@@ -150,10 +152,26 @@ def score_company(features: Union[dict, pd.Series, pd.DataFrame]) -> dict[str, A
 
     Returns a dict:
       {
-        "default_probability": float in [0, 1],
+        "default_probability": float in [0, 1],  # CALIBRATED, not raw
         "credit_score": int in [300, 900],
         "risk_band": "Low Risk" | "Medium Risk" | "High Risk",
       }
+
+    Why calibration happens here: Step 7's model uses class_weight=
+    "balanced", which inflates raw probabilities above the true population
+    default rate (it fixed recall, at the cost of realistic absolute
+    probabilities). probability_to_score() treats 0.20/0.50 as exact
+    boundaries, so feeding it a realistic (calibrated) probability matters.
+    apply_calibration() (model/calibration.py) is a separate, tiny mapping
+    fitted by model/calibrate.py -- it does NOT change the model itself.
+
+    Note on SHAP: model/explainer.py's explain_company() deliberately
+    keeps explaining the BASE model's raw (uncalibrated) decision function,
+    not this calibrated probability. That's correct, not an inconsistency
+    -- SHAP is explaining *why the base model ranked this company the way
+    it did*, which calibration (a separate, monotonic rescaling fit
+    afterward) doesn't change. See model/calibrate.py's module docstring
+    for the full reasoning.
     """
     if isinstance(features, pd.DataFrame):
         if len(features) != 1:
@@ -181,7 +199,8 @@ def score_company(features: Union[dict, pd.Series, pd.DataFrame]) -> dict[str, A
     # trained on (model.config.FEATURE_COLUMNS), so column order can never
     # silently drift between training and scoring.
     X = pd.DataFrame([row[FEATURE_COLUMNS]])
-    probability = float(_MODEL.predict_proba(X)[:, 1][0])
+    raw_probability = float(_MODEL.predict_proba(X)[:, 1][0])
+    probability = apply_calibration(raw_probability)
     score = probability_to_score(probability)
     risk_band = assign_risk_band(score)
 

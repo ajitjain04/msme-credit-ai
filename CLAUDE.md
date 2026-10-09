@@ -29,7 +29,22 @@ scripts, e.g. database seeding).
   in the same format already used in that file.
 
 ## Current step
-Step 11: FastAPI backend (`backend/schemas.py`, `backend/crud.py`,
-`backend/main.py`) written and verified end-to-end against a throwaway
-in-memory DB, not yet started as a real server. Next: run the server
-yourself, then Step 12 (dashboard).
+Step 12c complete: probability calibration. Platt (sigmoid) scaling
+adopted over isotonic (test Brier 0.1119 vs 0.1125) -- saved to
+`model/artifacts/calibrator.joblib`, applied in `score_company()`.
+Confirmed via a since-deleted diagnostic script that the resulting skewed
+risk-band distribution (76.9% Low Risk) is correct, not a bug: it reflects
+the dataset's true ~15% default rate, which `class_weight="balanced"` had
+been distorting -- Step 8's original 58.9%/32.9% Medium/High split was
+the inflated, wrong one. `model/artifacts/model.joblib` and Step 8's
+`probability_to_score()` are both unchanged.
+
+Step 12c complete. Next: Step 12d (fairness/DIR auditing).
+
+## Upgrade sequence (agreed order, do not resequence without asking)
+1. ~~Step 12c: probability calibration~~ — complete.
+2. **Step 12d: fairness / disparate impact ratio (DIR) auditing — next.**
+3. Step 10b: PostgreSQL migration (replaces the SQLite database layer).
+4. Step 12e: PDF report generator.
+5. Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard).
+6. Step 13: tests.

@@ -5,6 +5,403 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 12c (conclusion): Calibration adopted; skew confirmed real, not a bug
+
+### Completed
+- **Final calibration result:** isotonic regression vs. Platt (sigmoid)
+  scaling were fit on the same 5-fold out-of-fold training probabilities
+  and compared on the held-out test set. **Platt won** (test Brier
+  0.1119 vs. isotonic's 0.1125) and was adopted.
+- **Root problem confirmed:** Step 7's `class_weight="balanced"` model
+  produced badly miscalibrated raw probabilities — e.g. the 50-60%
+  predicted bucket had only a 20.8% actual observed default rate, a
+  large overstatement. This is exactly what calibration is for, and
+  Platt scaling fixed it.
+- **Investigated the skewed risk-band distribution** that calibration
+  produced (76.9% Low Risk, vs. Step 8's original 8.2%) using the
+  diagnostic script from the previous entry
+  (`model/calibrate_experiment.py`, since deleted — its job was done):
+  retrained the identical model **without** `class_weight="balanced"`
+  and compared its raw probabilities against both balanced options.
+  **Result: the unweighted model's raw probabilities showed nearly
+  identical skew (78.8% Low Risk)**, with equally strong reliability
+  numbers (predicted probability closely tracked actual observed default
+  rate in every well-populated bucket). This rules out class balancing as
+  the cause of the skew.
+- **Conclusion: the skew is correct, not a bug.** The test set's true
+  default rate is 14.8% — 85.2% of companies genuinely do not default —
+  so a well-calibrated model correctly assigns most companies to Low
+  Risk. **Step 8's original distribution (58.9% Medium, 32.9% High) was
+  the actually wrong one**, inflated by `class_weight="balanced"`'s
+  probability distortion; calibration has now corrected it. Risk-band
+  boundaries and `probability_to_score()` (Step 8) are unchanged — they
+  now simply operate on honest, calibrated probabilities instead of
+  distorted ones.
+
+### Files created/changed
+- `model/artifacts/calibrator.joblib`: final artifact — Platt (sigmoid)
+  scaling, applied in `model/scoring.py`'s `score_company()` before the
+  credit-score formula.
+- `model/artifacts/model.joblib`: **unchanged** — still Step 7's balanced
+  model, still the single plain Logistic Regression `model/explainer.py`'s
+  SHAP explainer needs.
+- `model/calibrate_experiment.py`: deleted (diagnostic script; its
+  conclusion is recorded here, the script itself was disposable).
+
+### Decisions made
+- Chose Platt over isotonic purely on test-set Brier score (0.1119 vs.
+  0.1125), consistent with `model/calibrate.py`'s selection rule (lower
+  Brier wins unless absurdly skewed relative to the other candidate —
+  here neither was, so the better Brier score decided it).
+- Did **not** revisit `class_weight="balanced"` in `model/tune.py` after
+  the diagnostic ruled it out as the cause of the skew — no further
+  action needed there.
+- The large risk-band shift from Step 8 (58.9%/32.9% Medium/High) to now
+  (76.9% Low Risk) is a **feature of fixing the probabilities**, not a
+  regression: it reflects the dataset's true ~15% default rate rather
+  than class-weighting's inflated one.
+
+### Next step
+- Step 13: tests (`tests/test_api.py`, `tests/test_predictor.py`,
+  `tests/test_scoring.py`), now against the final, calibrated
+  `score_company()` output.
+
+---
+
+## 2026-10-09 — Step 12c (diagnostic): is class_weight="balanced" the real root cause?
+
+### Completed
+- Both isotonic and Platt calibration (previous entries) turned out
+  absurdly skewed on the real run (76-80% "Low Risk" either way) — two
+  different calibration methods failing the same way on the same raw
+  probabilities points at the probabilities themselves, not the
+  calibration method.
+- Created `model/calibrate_experiment.py` (new, read-only diagnostic
+  script — not executed by the assistant, the user will run it):
+  trains **only** a Logistic Regression with the exact same Optuna
+  -found `C` from `best_params.json`, but **without**
+  `class_weight="balanced"`, on the same training data, then compares
+  its raw probabilities against Step 7's balanced model (raw AND
+  Platt-calibrated) on Brier score, ROC-AUC, risk-band distribution, and
+  the same 10-bucket reliability table.
+- Reused `model/calibrate.py`'s own
+  `build_calibration_model_template()`/`get_out_of_fold_probabilities()`/
+  `fit_platt_calibrator()`/`evaluate_probabilities()`/
+  `build_reliability_table()` directly rather than reimplementing any of
+  them — the Platt column is refit fresh inside this script (not read
+  from the possibly-isotonic `calibrator.joblib` currently on disk), so
+  the comparison is self-contained and trustworthy regardless of which
+  calibrator last won.
+- Ends with an explicit, criteria-based recommendation (adopt / adopt
+  with caveat / don't adopt) based on: is the unweighted model's largest
+  risk band ≤ 60%, is its Brier score at least as good as the better of
+  the two balanced options, and is its ROC-AUC within ±0.03 of the ~0.74
+  this project has seen throughout.
+- **Verified without running the real experiment:** syntax-checked the
+  file; confirmed it imports cleanly with `main()` not invoked; hashed
+  `model/tune.py`, `model/calibrate.py`, `model/artifacts/model.joblib`,
+  `best_params.json`, and `calibrator.joblib` before and after import —
+  all 5 hashes identical, confirming nothing was touched; separately
+  verified the lightweight helper functions directly (`load_best_c()`
+  returns the real Optuna `C`; `build_unweighted_logistic_regression()`
+  produces a Pipeline with `class_weight=None`) without fitting any
+  model or running the actual experiment.
+
+### Files created/changed
+- `model/calibrate_experiment.py`: created. No other file touched —
+  `model/tune.py` and all existing artifacts are untouched by design.
+
+### Decisions made
+- Deliberately did NOT reuse `model.tune.build_trial_model()` for the
+  unweighted model (its Logistic Regression branch hardcodes
+  `class_weight="balanced"`) — built the Pipeline directly instead,
+  mirroring the same imputer→scaler→LogisticRegression shape, with the
+  same `C`, differing only in the one parameter under test.
+- This script never calls `joblib.dump()` or writes to
+  `model/artifacts/` at all — intentionally a pure diagnostic with no
+  side effects, so running it carries zero risk to the working pipeline.
+
+### Next step
+- **User runs `python model/calibrate_experiment.py`** and reviews the
+  printed recommendation. If it recommends adopting the unweighted
+  approach, the suggested follow-up (a separate, future decision) is to
+  re-run `model/tune.py`'s Optuna search without
+  `class_weight="balanced"` and reassess whether calibration is still
+  needed at all.
+
+---
+
+## 2026-10-09 — Step 12c (bug fix): PlattCalibrator pickling location
+
+### Completed
+- **Bug found by the user:** `PlattCalibrator` (added in the previous
+  entry below) was defined inside `model/calibrate.py`, the script run
+  directly via `python model/calibrate.py`. joblib/pickle records a
+  class's location as the module it was defined in at save time — when a
+  script is run directly, that module is `__main__`, not
+  `model.calibrate`. So a `calibrator.joblib` saved that way would fail
+  to load from any OTHER script (e.g. `scripts/init_db.py`, the API) with
+  `AttributeError: Can't get attribute 'PlattCalibrator' on <module
+  '__main__'>`.
+- **Fix:** moved the `PlattCalibrator` class definition into
+  `model/calibration.py` — the one module every caller (`score_company()`,
+  `calibrate.py` itself, and anything that later loads `calibrator.joblib`)
+  already imports normally (never runs directly as `__main__`) — and
+  updated `model/calibrate.py` to `from model.calibration import
+  PlattCalibrator` instead of defining it locally. This makes the pickled
+  class always resolve to the stable path `model.calibration.PlattCalibrator`,
+  regardless of which script loads the file later.
+- **Verified without running the real script:** confirmed
+  `model.calibrate.PlattCalibrator is model.calibration.PlattCalibrator`
+  (the exact same class object via the import); then reproduced the bug
+  scenario directly — fit a `PlattCalibrator` on fake data in one Python
+  process, `joblib.dump()` it, confirmed it pickled under
+  `model.calibration` (not `__main__`), then loaded it back in a
+  **completely separate, fresh process** and called `.predict()`
+  successfully. Deleted the temp file afterward; the real
+  `calibrator.joblib` was not touched.
+
+### Files created/changed
+- `model/calibration.py`: `PlattCalibrator` class added (moved from
+  `model/calibrate.py`); docstrings updated to reflect its new home.
+- `model/calibrate.py`: `PlattCalibrator` definition removed; now imports
+  it from `model.calibration` instead. No other logic changed.
+- `CLAUDE.md`: current step updated.
+
+### Decisions made
+- No change needed to `apply_calibration()`'s own logic — it already
+  only calls `.predict()` generically, so moving the class didn't require
+  touching that function, only where the class lives.
+
+### Next step
+- **User re-runs `python model/calibrate.py` once more** to regenerate
+  `calibrator.joblib` with the corrected, stable class location (same
+  isotonic-vs-Platt comparison and auto-selection as before — only the
+  pickling bug is different). Then confirm `scripts/init_db.py` and/or the
+  API can load it successfully, and proceed to Step 13: tests.
+
+---
+
+## 2026-10-09 — Step 12c (continued): Isotonic vs. Platt calibration comparison
+
+### Completed
+- The first calibration pass (isotonic regression alone, previous entry
+  below) was run and found genuinely problematic: **79.9% of the test set
+  landed in "Low Risk"** (up from 8.2% raw), with several reliability
+  buckets having only 0-2 training rows — isotonic regression's flexible,
+  step-wise curve overfitting the limited (~4,000-row) training set.
+- Rewrote `model/calibrate.py` to fit **both** isotonic regression and
+  **Platt/sigmoid scaling** on the exact same out-of-fold training
+  probabilities (same `cross_val_predict` call as before, now feeding
+  two separate `.fit()` calls instead of one):
+  - Added `PlattCalibrator`: a thin wrapper around a plain 1-feature
+    `LogisticRegression` (the standard manual Platt-scaling
+    implementation — fits only a slope + intercept, 2 numbers total vs.
+    isotonic's many "knots"), exposing the same `.predict()` interface as
+    `IsotonicRegression` so `model/calibration.py` can treat whichever
+    one wins identically.
+  - `evaluate_probabilities()` and `build_reliability_table()` now
+    compute Brier score / the 10-bucket reliability table / the risk-band
+    distribution for **Raw, Isotonic, and Platt side by side** (not just
+    before/after).
+  - Added `select_winning_calibrator()`: picks the lower-test-set-Brier
+    candidate between Isotonic/Platt, **unless** that candidate's
+    risk-band distribution is absurdly skewed (> 70% in one band) while
+    the other isn't — in which case the non-skewed one wins instead,
+    with the reasoning printed either way (including the "both skewed"
+    edge case, printed as an explicit warning rather than silently
+    picking one).
+  - `model/calibration.py`'s docstrings updated to say "whichever
+    calibrator won" instead of assuming isotonic specifically; its
+    `apply_calibration()` logic itself needed no code changes, since
+    both calibrators expose the same `.predict()` interface.
+- **Verified without running the real script:** syntax-checked all 3
+  touched files; confirmed `model.calibrate` still imports cleanly
+  (module-level only, `main()` not invoked); functionally tested
+  `PlattCalibrator` end-to-end on throwaway fake data in an isolated
+  script — fit, joblib pickle/round-trip, and `.predict()` all correct,
+  producing a sensible monotonic curve comparable to isotonic's — then
+  deleted the temp file. The real `model/artifacts/calibrator.joblib`
+  (already present from the first isotonic-only run) was not touched by
+  any of these checks.
+
+### Files created/changed
+- `model/calibrate.py`: substantially rewritten (fits + evaluates + picks
+  between 2 calibrators instead of 1; added `PlattCalibrator`,
+  `evaluate_probabilities()`, `select_winning_calibrator()`; generalized
+  `build_reliability_table()`/`print_calibration_report()` to 3-way).
+- `model/calibration.py`: docstring/comment wording updated only (no
+  logic change — already calibrator-agnostic).
+- `CLAUDE.md`: current step updated.
+
+### Decisions made
+- Selection rule implemented as "lower Brier wins, UNLESS it's absurdly
+  skewed and the other candidate isn't" (not a strict two-condition AND
+  that could leave no winner) — reflects that a usable risk-band spread
+  matters more than a marginal Brier improvement for this project's
+  purpose, while still defaulting to the better Brier score when both
+  are reasonable.
+- Kept Raw in the printed comparison/warning check (even though it was
+  never a save candidate) purely for context, since seeing how far raw
+  probabilities drift makes the calibrated numbers easier to sanity-check.
+
+### Next step
+- **User re-runs `python model/calibrate.py`** with the new 3-way
+  comparison, reviews which calibrator won (Isotonic or Platt) and the
+  printed reasoning, confirms the resulting risk-band distribution looks
+  reasonable, then proceeds to Step 13: tests.
+
+---
+
+## 2026-10-09 — Step 12c: Probability calibration (isotonic regression)
+
+### Completed
+- Created `model/calibrate.py` (one-time fitting + evaluation script,
+  written and reviewed — including a bootstrapping-order bug found and
+  fixed before handing it over — not executed by the assistant; the user
+  will run it manually):
+  - Backs up the pre-calibration `model.joblib` + `best_params.json` to
+    `model/artifacts/pre_calibration/` (idempotent, same pattern as Step
+    7's `baseline_step6/` backup).
+  - Rebuilds an unfitted model of the **exact same type + hyperparameters**
+    as the real tuned model by replaying `best_params.json` through
+    `model.tune.build_trial_model()` directly (reused, not retyped).
+  - Gets out-of-fold probabilities via `sklearn.model_selection.
+    cross_val_predict` (5-fold stratified, training set only — no
+    leakage), fits `sklearn.isotonic.IsotonicRegression(out_of_bounds=
+    "clip")` on (OOF probability, true label), and saves it to
+    `model/artifacts/calibrator.joblib`. **`model.joblib` itself is never
+    modified.**
+  - Evaluates on the test set (touched once): Brier score before/after,
+    a 10-bucket reliability table (mean predicted vs. actual rate, raw
+    and calibrated side by side), and the Low/Medium/High risk-band
+    distribution shift between raw and calibrated probabilities.
+- Created `model/calibration.py`: the lightweight, reusable
+  `apply_calibration()` — loads `calibrator.joblib` **lazily** (on first
+  call, then cached) rather than at import time, specifically so
+  `model/calibrate.py` can import `model/scoring.py`'s pure helper
+  functions on its very first run, before `calibrator.joblib` exists yet
+  (an eager load would have made that first run impossible — caught and
+  fixed via an isolated import check before this was handed over).
+- Updated `model/scoring.py`'s `score_company()` — the **only** change
+  made there, per the brief — to call `apply_calibration()` on the raw
+  model probability before `probability_to_score()`. Docstring updated to
+  explain why, and to note that `model/explainer.py`'s SHAP explanations
+  deliberately keep explaining the base model's raw, uncalibrated
+  decision function.
+- **Verified via isolated import checks** (not running `calibrate.py`
+  itself): `model.scoring`, `model.explainer`, and `model.calibrate` all
+  import cleanly with `calibrator.joblib` absent (confirming the lazy-load
+  fix); `apply_calibration()` raises a clear, actionable
+  `FileNotFoundError` naming the exact command to run first, rather than
+  a confusing failure somewhere downstream.
+
+### Files created/changed
+- `model/calibrate.py`: created.
+- `model/calibration.py`: created.
+- `model/scoring.py`: `score_company()` updated (import + 2-line change +
+  docstring); no other function touched.
+- `CLAUDE.md`: current step updated, with an explicit note about the new
+  `calibrator.joblib` dependency.
+
+### Decisions made
+- Did NOT use `sklearn.calibration.CalibratedClassifierCV` (per the
+  brief): it would wrap the base model in an internal CV-fold ensemble,
+  no longer a single plain `LogisticRegression` with stable coefficients
+  — breaking `model/explainer.py`'s `shap.LinearExplainer`, which needs
+  exactly that. Built the same idea by hand instead, as two fully
+  separate artifacts (`model.joblib` unchanged; `calibrator.joblib` new).
+- SHAP continues explaining the **base, uncalibrated** model — this is
+  correct, not an oversight: SHAP explains *why the base model ranked a
+  company the way it did*; calibration is a separate, monotonic rescaling
+  applied afterward that doesn't change that ranking or reasoning.
+- `model/calibration.py` loads `calibrator.joblib` lazily rather than
+  eagerly (unlike `model/scoring.py`'s/`model/explainer.py`'s eager
+  `_MODEL`/`_EXPLAINER` loads) — a deliberate, documented exception to
+  that pattern, needed to break the chicken-and-egg import order on
+  `calibrate.py`'s first-ever run.
+
+### Next step
+- **User runs `python model/calibrate.py` once** (this is now required
+  before `score_company()` works again anywhere — API, dashboard,
+  `scripts/init_db.py` — since it now calls `apply_calibration()`, which
+  needs `calibrator.joblib` to exist). Review the printed Brier
+  score/reliability table/risk-band shift, then proceed to Step 13: tests.
+
+---
+
+## 2026-10-09 — Step 12: Streamlit dashboard
+
+### Completed
+- Created `dashboard/components/charts.py`: 3 pure Plotly chart builders
+  (no Streamlit/API/model code) — `build_score_gauge()` (300-900
+  gauge colored by the 3 risk-band zones, black threshold line as the
+  "needle"), `build_shap_driver_chart()` (tornado-style horizontal bars,
+  positive SHAP values red/right, negative green/left), and
+  `build_portfolio_pie_chart()` (risk-band donut chart). Also defines
+  `FEATURE_LABELS`/`feature_label()`, a single shared lookup so the chart
+  axis labels and the dashboard's plain-English sentences always show the
+  same human-readable names.
+- Created `dashboard/app.py`: calls the Step 11 API **only over HTTP**
+  (via `requests`) — no `model`/`backend` imports, exactly like a real
+  separate frontend. Wide layout, sidebar input form covering every
+  `MSMEInput` field (dropdowns for category/state, checkboxes for the two
+  booleans, sliders/number inputs with ranges from
+  `docs/data_dictionary.md` elsewhere), and 3 main tabs:
+  - **Credit Scorecard**: gauge + colored risk-band badge + probability,
+    populated from the last `POST /evaluate` result.
+  - **Why this score? (Explainability)**: the tornado chart plus each
+    driver restated as a plain-English sentence (e.g. "Bounced Payments
+    (last 6 months) = 7.00 increased risk").
+  - **Portfolio Overview**: `GET /analytics/portfolio` fetched
+    automatically on first render (not button-triggered), cached in
+    `st.session_state`, with a manual Refresh button for later updates.
+  - Unreachable API / non-200 responses are caught and shown via
+    `st.error()` with the exact command to start the backend, instead of
+    crashing the app.
+- `st.session_state` holds `last_evaluation` and `portfolio_data` so both
+  survive Streamlit's full-script rerun on every interaction (otherwise
+  switching tabs would make the scorecard disappear).
+- Verified the 3 chart-building functions directly with realistic sample
+  data (figures built without error, correct bar/pie values, label
+  lookup working with a sensible fallback for unknown features) — the
+  full Streamlit app itself was not run by the assistant, per
+  instructions; the user will run it manually in a second terminal.
+- Added the missing `dashboard/__init__.py` and a `sys.path` fix at the
+  top of `app.py` (matching the pattern already used in
+  `model/train.py`/`scripts/init_db.py`), since `streamlit run
+  dashboard/app.py` puts `dashboard/` itself on `sys.path`, not the
+  project root, which would otherwise break the
+  `dashboard.components.charts` import.
+
+### Files created/changed
+- `dashboard/components/charts.py`: created.
+- `dashboard/app.py`: created.
+- `dashboard/__init__.py`: created.
+- `CLAUDE.md`: current step updated.
+
+### Decisions made
+- `business_category`/`state` dropdown options and per-field
+  slider/number-input ranges are hardcoded in `app.py` (matching
+  `docs/data_dictionary.md`), rather than imported from
+  `model/artifacts/category_encodings.json` — Step 12's design explicitly
+  keeps the dashboard decoupled from backend/model code, so this list
+  must be kept in sync by hand if those files ever change; flagged in
+  comments at both definitions.
+- Portfolio data fetches automatically once per session (page load) and
+  then only on manual Refresh, rather than on every script rerun —
+  avoids an API call on every unrelated sidebar interaction while still
+  satisfying "on page load, not button-triggered."
+
+### Next step
+- User starts both servers manually in two terminals
+  (`uvicorn backend.main:app --reload`, then
+  `streamlit run dashboard/app.py`), exercises the dashboard end-to-end,
+  then Step 13: tests (`tests/test_api.py`, `tests/test_predictor.py`,
+  `tests/test_scoring.py`).
+
+---
+
 ## 2026-10-09 — Step 11: FastAPI backend
 
 ### Completed
