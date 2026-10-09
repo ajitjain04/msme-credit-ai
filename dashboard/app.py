@@ -48,6 +48,7 @@ from dashboard.components.charts import (  # noqa: E402
 API_BASE_URL = "http://localhost:8000"
 EVALUATE_URL = f"{API_BASE_URL}/api/v1/evaluate"
 PORTFOLIO_URL = f"{API_BASE_URL}/api/v1/analytics/portfolio"
+PDF_REPORT_URL_TEMPLATE = f"{API_BASE_URL}/api/v1/company/{{company_id}}/report/pdf"
 
 # Mirrors docs/data_dictionary.md section 1's category list. The dashboard
 # doesn't import backend/schemas.py directly (see module docstring), so
@@ -88,6 +89,12 @@ if "last_evaluation" not in st.session_state:
     st.session_state.last_evaluation = None
 if "portfolio_data" not in st.session_state:
     st.session_state.portfolio_data = None
+if "pdf_report_cache" not in st.session_state:
+    # Keyed by (company_id, assessed_at) -- NOT just company_id -- so
+    # re-assessing the same company (a new assessed_at) correctly fetches
+    # a fresh PDF instead of silently reusing a stale, already-cached one
+    # from an earlier assessment of that same company.
+    st.session_state.pdf_report_cache = {}
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +126,30 @@ def call_evaluate_api(payload: dict) -> dict | None:
     except ValueError:
         detail = response.text
     st.error(f"API returned {response.status_code}: {detail}")
+    return None
+
+
+def fetch_pdf_report(company_id: str) -> bytes | None:
+    """GETs the one-page PDF credit report for one company's most recent
+    assessment. Returns the raw PDF bytes, or None (after showing a
+    st.error) if the API is unreachable or the report couldn't be built."""
+    try:
+        response = requests.get(PDF_REPORT_URL_TEMPLATE.format(company_id=company_id), timeout=15)
+    except requests.exceptions.ConnectionError:
+        st.error(
+            f"⚠️ Could not reach the API at {API_BASE_URL} to fetch the PDF report. "
+            f"Is the backend server running?"
+        )
+        return None
+
+    if response.status_code == 200:
+        return response.content
+
+    try:
+        detail = response.json().get("detail", response.text)
+    except ValueError:
+        detail = response.text
+    st.error(f"API returned {response.status_code} fetching the PDF report: {detail}")
     return None
 
 
@@ -283,6 +314,22 @@ with tab1:
             )
             st.metric("Credit Score", result["credit_score"])
             st.metric("Default Probability", f"{result['default_probability'] * 100:.1f}%")
+
+            st.markdown("")
+            cache_key = (result["company_id"], result["assessed_at"])
+            if cache_key not in st.session_state.pdf_report_cache:
+                with st.spinner("Preparing PDF report..."):
+                    st.session_state.pdf_report_cache[cache_key] = fetch_pdf_report(result["company_id"])
+
+            pdf_bytes = st.session_state.pdf_report_cache[cache_key]
+            if pdf_bytes is not None:
+                st.download_button(
+                    label="\U0001F4C4 Download PDF Report",
+                    data=pdf_bytes,
+                    file_name=f"credit_report_{result['company_id']}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
 
 # --- TAB 2: Explainability ---------------------------------------------------
 with tab2:

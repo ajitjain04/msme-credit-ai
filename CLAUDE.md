@@ -59,12 +59,49 @@ reseeded 20 companies with calibrated scores (609-861 range, 13 Low Risk
 distribution). `data/processed/msme_credit.db` kept untouched as a
 backup/reference, not used going forward.
 
-Next: Step 12e (PDF report generator).
+Step 12e: PDF report generator. Added `model/report_generator.py`'s
+`generate_pdf_report()` (reportlab, one-page, builds entirely in a BytesIO
+buffer), `GET /api/v1/company/{company_id}/report/pdf` in
+`backend/main.py`, and a "Download PDF Report" button in the dashboard's
+Tab 1. Reuses `dashboard/components/charts.py`'s `FEATURE_LABELS`/
+`feature_label()`/`RISK_BAND_COLORS` rather than redefining them. Found +
+fixed 2 real layout bugs (score/probability text crowding; footer
+disclaimer colliding with the page number) via visual inspection of a
+generated test PDF before handing off. Verified end-to-end via
+`TestClient` against a throwaway DB (real evaluate -> real PDF -> correct
+headers -> correct 404); not yet run for real.
+
+Bug fix: `POST /api/v1/evaluate` failed on PostgreSQL ("schema np does not
+exist") -- numpy.float64/int64 values from `model/scoring.py`/
+`model/preprocessing.py` silently worked on SQLite but broke psycopg2
+(numpy 2.0+'s `repr()` returns `"np.float64(...)"` text, which Postgres
+tried to parse as a schema-qualified call). Fixed with a recursive
+`_to_native()` sanitizer in `backend/crud.py`'s
+`create_company_and_assessment()` -- the one boundary every DB write
+crosses. Verified fixed: both a synthetic numpy-typed test and the REAL
+`POST /evaluate` code path now store pure native Python types (confirmed
+via throwaway in-memory DB, real Postgres untouched).
+`model/report_generator.py` confirmed NOT affected (it only uses
+f-string/`float()` formatting, never `repr()`).
+
+PDF report fixes: (1) footer was confirmed PRESENT via `pypdf` ground
+-truth parsing (not actually missing/off-page), but sat right at typical
+printer hardware-margin clipping risk and was small/low-contrast --
+moved up + made more legible. (2) `business_category_encoded`/
+`state_encoded` were showing raw numeric codes ("2.00") instead of real
+category names -- fixed by decoding them via
+`model/artifacts/category_encodings.json` (same file Step 5 used) before
+display, with a safe numeric fallback if a code is ever unrecognized.
+
+Step 12e complete: live-verified end-to-end -- PDF downloads correctly
+from both the dashboard button and the API directly, with correct
+score/risk-band/probability, readable SHAP driver sentences (decoded
+category/state names included), and the corrected footer.
 
 ## Upgrade sequence (agreed order, do not resequence without asking)
 1. ~~Step 12c: probability calibration~~ — complete.
 2. ~~Step 12d: fairness / disparate impact ratio (DIR) auditing~~ — complete.
 3. ~~Step 10b: PostgreSQL migration~~ — complete.
-4. **Step 12e: PDF report generator — next.**
-5. Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard).
+4. ~~Step 12e: PDF report generator~~ — complete.
+5. **Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard) — next.**
 6. Step 13: tests.

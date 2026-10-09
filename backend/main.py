@@ -24,6 +24,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -44,6 +45,7 @@ from model.config import FEATURE_COLUMNS  # noqa: E402
 from model.explainer import explain_company  # noqa: E402
 from model.fairness import MIN_COHORT_SIZE, compute_dir_audit  # noqa: E402
 from model.preprocessing import add_derived_ratios  # noqa: E402
+from model.report_generator import generate_pdf_report  # noqa: E402
 from model.scoring import score_company  # noqa: E402
 
 # Importing model.scoring and model.explainer above already loaded the
@@ -226,6 +228,59 @@ def get_company(company_id: str, db: Session = Depends(get_db)) -> CompanyHistor
             }
             for a in company.assessments
         ],
+    )
+
+
+@app.get("/api/v1/company/{company_id}/report/pdf")
+def get_company_pdf_report(company_id: str, db: Session = Depends(get_db)) -> StreamingResponse:
+    """Step 12e — generates a one-page PDF credit-assessment report for a
+    company's MOST RECENT assessment, and streams it straight back as the
+    HTTP response (see model/report_generator.py for why it's built
+    entirely in memory, never written to a temp file).
+
+    Reuses crud.get_company_with_history() -- the exact same query
+    GET /api/v1/company/{company_id} already uses (not duplicated) -- and
+    its `.assessments` list is already sorted newest-first, so
+    `company.assessments[0]` is the most recent one. 404s if the company
+    doesn't exist OR has no assessments yet, same pattern as that
+    endpoint.
+    """
+    company = crud.get_company_with_history(db, company_id)
+    if company is None:
+        raise HTTPException(status_code=404, detail=f"Company '{company_id}' not found.")
+    if not company.assessments:
+        raise HTTPException(
+            status_code=404, detail=f"Company '{company_id}' has no assessments yet."
+        )
+
+    latest_assessment = company.assessments[0]
+
+    company_data = {
+        "company_id": company.company_id,
+        "company_name": company.company_name,
+        "assessed_at": latest_assessment.assessed_at,
+    }
+    score_result = {
+        "default_probability": latest_assessment.default_probability,
+        "credit_score": latest_assessment.credit_score,
+        "risk_band": latest_assessment.risk_band,
+    }
+    explanation_result = {
+        "top_positive_contributors": latest_assessment.shap_top_drivers.get(
+            "top_positive_contributors", []
+        ),
+        "top_negative_contributors": latest_assessment.shap_top_drivers.get(
+            "top_negative_contributors", []
+        ),
+    }
+
+    pdf_buffer = generate_pdf_report(company_data, score_result, explanation_result)
+
+    filename = f"credit_report_{company_id}.pdf"
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

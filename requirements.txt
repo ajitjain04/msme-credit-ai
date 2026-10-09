@@ -26,6 +26,9 @@ sqlalchemy
 psycopg2-binary
 python-dotenv
 
+# Reporting
+reportlab
+
 # Frontend
 streamlit
 requests

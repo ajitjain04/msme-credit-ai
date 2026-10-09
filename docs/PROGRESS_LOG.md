@@ -5,6 +5,273 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 12e (complete): PDF report generator, live-verified
+
+### Completed
+- Built the downloadable one-page PDF credit-assessment report:
+  `model/report_generator.py` (`reportlab`) and
+  `GET /api/v1/company/{company_id}/report/pdf` (see the two detailed
+  entries below for the full build + bug-fix history).
+- Found and fixed two issues during review, before declaring this done:
+  1. **Footer disclaimer** was present in the PDF (confirmed via `pypdf`
+     text extraction) but positioned too close to the page edge (printer
+     -margin clipping risk) and too faint to notice easily — repositioned
+     and restyled for legibility.
+  2. **`business_category`/`state`** were displaying as raw internal
+     encoded numbers (e.g. `"2.00"`) instead of readable names — fixed by
+     decoding them back to their real category/state names using
+     `model/artifacts/category_encodings.json` before display, without
+     touching `model/explainer.py`'s actual SHAP computation.
+- **Verified end-to-end for real:** the PDF downloads correctly both from
+  the dashboard's "Download PDF Report" button and from the API endpoint
+  directly, and shows the correct score/risk-band/probability, readable
+  plain-English SHAP driver sentences (including decoded category/state
+  names), and the corrected, legible footer.
+
+### Next step
+- Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit
+  dashboard).
+
+---
+
+## 2026-10-09 — Bug fix: PDF report footer visibility + raw encoded category values
+
+### Completed
+- **Issue 1 (footer):** investigated whether the disclaimer/page-number
+  footer was genuinely missing from `model/report_generator.py` or just
+  rendering off-page. Installed `pypdf` temporarily (ground-truth PDF
+  parsing, not just my own Read-tool rendering) and confirmed the footer
+  text **was** present, on exactly 1 page, correctly extracted — so it
+  was never literally missing or cut off by reportlab. However, it sat at
+  y=38pt, right at the edge of the ~36pt hardware margin most printers
+  refuse to print inside (real clipping risk if ever physically printed),
+  and was small (7pt) + low-contrast (light gray) — an easy combination
+  to overlook at a glance, which is the most likely explanation for it
+  reading as "missing." Fixed by moving the whole footer block up
+  (lowest baseline now y=44, safely clear of typical printer margins) and
+  making it slightly larger/darker (7pt light gray → 8pt `#444444`) for
+  legibility, without touching the driver-drawing logic that determines
+  the footer's position is otherwise unaffected by.
+- **Issue 2 (raw encoded values):** `business_category_encoded`/
+  `state_encoded` were displaying their raw internal integer codes (e.g.
+  "Business Category: 2.00") instead of a real category name — correct
+  input to SHAP, meaningless to a report reader. Added
+  `_format_driver_value()`, which decodes exactly these 2 features back
+  to their real name (e.g. "retail", "Maharashtra") via
+  `model/artifacts/category_encodings.json` — the SAME file Step 5's
+  `model/preprocessing.py` used to encode them in the first place, loaded
+  once and inverted at import time. Every other feature's display is
+  completely unchanged (still a plain formatted number). Falls back to
+  showing the raw number if a code is ever unrecognized (shouldn't happen
+  in practice) rather than crashing the report.
+- `model/explainer.py` (the actual SHAP computation) was **not** touched,
+  per the brief — only how `model/report_generator.py` *displays* these
+  2 features' already-computed values.
+- **Verified both fixes together, without running the real server:**
+  regenerated a test PDF with `business_category_encoded`/`state_encoded`
+  among the top drivers, confirmed via `pypdf` text extraction that
+  `"Business Category: retail"` and `"State: Maharashtra"` appear (and
+  `"2.00"`/`"8.00"` do NOT), that the footer disclaimer + "Page 1 of 1"
+  are present, and visually re-inspected the rendered PDF. Also
+  unit-tested `_format_driver_value()` directly, including its fallback
+  path for an unrecognized code. Deleted all test PDFs and uninstalled
+  the temporary `pypdf` verification dependency afterward (never added
+  to `requirements.txt` — it was a diagnostic tool, not a project
+  dependency).
+
+### Files created/changed
+- `model/report_generator.py`: added `_format_driver_value()` +
+  `_ENCODED_FEATURE_DECODERS`; `_driver_sentence()` now takes an
+  already-formatted display string instead of a raw float; footer
+  repositioned/restyled.
+- `model/explainer.py`: confirmed untouched, per the brief.
+
+### Decisions made
+- Diagnosed the footer issue with `pypdf` (independent ground truth)
+  rather than trusting only my own earlier visual inspection — confirmed
+  it was a legibility/margin-safety problem, not the literal "missing
+  code" or "off-page" bug the brief anticipated, and said so plainly
+  rather than just silently making cosmetic tweaks.
+- Kept the category-decoding fallback (unrecognized code → raw number)
+  rather than raising an error, consistent with this project's general
+  preference for a report that still generates (with one imperfect value)
+  over one that fails outright.
+
+### Next step
+- User regenerates a real PDF report (via the dashboard's "Download PDF
+  Report" button or the API endpoint directly) for a company whose top
+  drivers include `business_category_encoded`/`state_encoded`, confirms
+  both fixes look right, then Step 12b: React/Next.js dashboard rewrite.
+
+---
+
+## 2026-10-09 — Bug fix: numpy scalar types breaking PostgreSQL inserts
+
+### Completed
+- **Bug found by the user against the real Postgres database:**
+  `POST /api/v1/evaluate` failed with
+  `psycopg2.errors.InvalidSchemaName: schema "np" does not exist` — did
+  NOT fail on SQLite. Root cause: `model/scoring.py`'s `score_company()`
+  and the pandas/numpy arithmetic behind `model/preprocessing.py`'s
+  derived ratios (`net_cash_margin`, `cash_buffer_ratio`, etc.) produce
+  `numpy.float64`/`numpy.int64` values, not native Python ones — any
+  pandas Series lookup returns numpy scalars, even for one row.
+  `numpy.float64` **is** a `float` subclass, so SQLite's loose typing
+  silently accepted it with no problem; psycopg2 doesn't recognize numpy
+  types and falls back to a `repr()`-based substitution — and as of
+  numpy 2.0+, `repr(np.float64(600000.0))` returns the **string**
+  `"np.float64(600000.0)"` (confirmed directly: numpy 2.4.6 in this
+  venv), which lands in the SQL unquoted and Postgres tries to parse
+  `np` as a schema name.
+- **Fix:** added a recursive `_to_native()` sanitizer to `backend/crud.py`,
+  called at the top of `create_company_and_assessment()` — the single
+  boundary every database write already passes through — converting any
+  `numpy.floating`/`numpy.integer`/`numpy.bool_` found anywhere inside
+  `company_data`/`assessment_data` (including nested, e.g. inside
+  `shap_top_drivers`'s list of driver dicts) into native Python
+  `float`/`int`/`bool`. `model/scoring.py` and `model/preprocessing.py`
+  were NOT touched, per the brief.
+- **Checked `model/report_generator.py` (Step 12e) for the same risk, as
+  requested:** confirmed it's NOT affected. It only ever inserts numbers
+  via f-string formatting (`f"{value:.2f}"`, `f"{credit_score} / 900"`)
+  or explicit `float()` casts — both use Python's `str()`/`format()`
+  protocol, which already renders numpy scalars as clean numbers (e.g.
+  `"600000.0"`), never `repr()`'s `"np.float64(600000.0)"` text. Verified
+  this distinction directly in the real venv (numpy 2.4.6) before
+  concluding it's a non-issue there.
+- **Verified the fix two ways, without touching the real Postgres
+  database:**
+  1. A synthetic test feeding `create_company_and_assessment()` dicts
+     built entirely of numpy scalars (including nested ones inside
+     `shap_top_drivers`) — confirmed every stored ORM attribute is a
+     native Python type afterward, and that re-assessing the same
+     company still works correctly post-fix.
+  2. The REAL production path: `POST /api/v1/evaluate` through
+     `TestClient` against a throwaway in-memory SQLite database (not the
+     real one) — confirmed the actually-stored `net_cash_margin`,
+     `cash_buffer_ratio`, `bounce_count_last_6m` and `credit_score`
+     values are all native Python `float`/`int`, not numpy types.
+
+### Files created/changed
+- `backend/crud.py`: added `_to_native()`; `create_company_and_assessment()`
+  now sanitizes both input dicts before building ORM objects.
+- `model/scoring.py`, `model/preprocessing.py`: confirmed untouched, per
+  the brief.
+
+### Decisions made
+- Sanitized at the `crud.py` boundary rather than at each source
+  (`model/scoring.py`, `model/preprocessing.py`, `backend/main.py`'s
+  `_build_feature_row()`) because this is the ONE place every current
+  and future database write already passes through — fixing it here
+  protects every caller automatically, including ones written later,
+  instead of requiring the same fix to be remembered and repeated at
+  every place a number happens to originate.
+- `_to_native()` is recursive (walks dicts/lists) specifically because
+  `shap_top_drivers` is itself a nested structure containing numbers
+  that needed the exact same fix — a shallow, top-level-only sanitizer
+  would have missed that.
+- Did not add sanitization to `save_fairness_audit_batch()`: traced
+  `model/fairness.py`'s `compute_dir_audit()` and confirmed its computed
+  values (`group_approval_rate`, `dir_value`, etc.) are built from plain
+  Python `sum()`/`len()` arithmetic on Python `bool`/`int` values, never
+  numpy arrays — so there's no equivalent risk there today. `_to_native()`
+  itself remains available as a general, reusable helper if that ever
+  changes.
+
+### Next step
+- User re-tests `POST /api/v1/evaluate` against the real PostgreSQL
+  database to confirm the fix resolves the original error, then Step 12b:
+  React/Next.js dashboard rewrite.
+
+---
+
+## 2026-10-09 — Step 12e: Downloadable PDF credit-assessment report
+
+### Completed
+- Added `reportlab` to `requirements.txt` and installed it locally to
+  verify the code below actually works (a declared dependency, not part
+  of "don't run the deliverable" — the server/endpoint itself was not
+  started; see verification notes below).
+- Created `model/report_generator.py`'s `generate_pdf_report(company_data,
+  score_result, explanation_result)`: builds a one-page PDF entirely in a
+  `BytesIO` buffer (never a temp file) — header (title, company name/ID,
+  assessment date), a colored risk-band badge + large credit score +
+  default probability %, a horizontal-bar visualization of the top 5
+  positive and top 5 negative SHAP drivers (bar length scaled by
+  `|SHAP value|`, relative across both sections so they're visually
+  comparable) with one plain-English sentence per driver, and a footer
+  disclaimer (synthetic data, student project, not a real lending
+  decision) + page number. Input shapes deliberately mirror
+  `score_company()`'s/`explain_company()`'s own return dicts, so
+  `backend/main.py` doesn't need to reshape anything.
+- **Reused, not redefined**, `dashboard/components/charts.py`'s
+  `FEATURE_LABELS`/`feature_label()` and `RISK_BAND_COLORS` (that module
+  is pure Python with no Streamlit import, so importing it from
+  `model/report_generator.py` is safe) — correcting the brief's framing
+  slightly: the lookup actually lives in `dashboard/components/charts.py`,
+  not `dashboard/app.py`, which only *uses* it.
+- Added `GET /api/v1/company/{company_id}/report/pdf` to
+  `backend/main.py`: reuses `crud.get_company_with_history()` (the same
+  query the existing history endpoint uses, not duplicated) to find the
+  company's most recent assessment (`.assessments[0]`, already sorted
+  newest-first), 404s if the company doesn't exist or has no assessments,
+  and returns the PDF via `StreamingResponse` with a
+  `Content-Disposition: attachment; filename="credit_report_<id>.pdf"`
+  header.
+- Added a "Download PDF Report" button to `dashboard/app.py`'s Tab 1,
+  appearing once an evaluation exists: fetches the PDF via the new
+  endpoint and caches the bytes in `st.session_state`, keyed by
+  **(company_id, assessed_at)** — not company_id alone — so re-assessing
+  the same company correctly fetches a fresh PDF instead of silently
+  reusing a stale cached one from an earlier assessment.
+- **Verified thoroughly, without starting the real server:**
+  - Generated real test PDFs with realistic fake data (including edge
+    cases: empty driver lists, missing `assessed_at`, all 3 risk bands)
+    and confirmed valid `%PDF-`/`%%EOF` byte structure each time.
+  - **Visually inspected a rendered test PDF and found 2 real layout
+    bugs** before handing off: the large score text crowded the default
+    -probability line below it, and the single-line footer disclaimer
+    collided with the right-aligned page number. Fixed both (more
+    vertical spacing; disclaimer wrapped onto 2 lines) and re-verified
+    visually — clean layout confirmed.
+  - Ran a full round trip through FastAPI's `TestClient` against a
+    throwaway in-memory database (not the real Postgres one):
+    `POST /evaluate` → real `score_company()`/`explain_company()` →
+    `GET /report/pdf` → 200, correct `Content-Type`/
+    `Content-Disposition` headers, valid PDF bytes; a nonexistent
+    company correctly 404s. Confirmed `backend.main` still imports
+    cleanly with all 5 routes (including the new one) registered.
+  - Test PDF files and the one-off test script were deleted afterward;
+    nothing was written to the real database or any permanent file.
+
+### Files created/changed
+- `requirements.txt`: added `reportlab`.
+- `model/report_generator.py`: created.
+- `backend/main.py`: added the `GET .../report/pdf` endpoint + import.
+- `dashboard/app.py`: added `fetch_pdf_report()`, the `pdf_report_cache`
+  session-state entry, and the download button in Tab 1.
+- `model/scoring.py`, `model/explainer.py`, `model/calibration.py`:
+  confirmed untouched — only their existing functions' outputs are
+  consumed, per the brief.
+
+### Decisions made
+- Used reportlab's low-level `canvas.Canvas` (direct x/y drawing) rather
+  than its `platypus` flowable-document API, since the layout is a fixed,
+  simple one-page design, not a multi-page flowing document — simpler to
+  reason about for this use case.
+- PDF caching in the dashboard keys on `(company_id, assessed_at)`
+  specifically to avoid a real correctness bug: keying on `company_id`
+  alone would silently serve a stale PDF after a re-assessment, since the
+  same company can be scored again with a new `assessed_at`.
+
+### Next step
+- User restarts the API (`uvicorn backend.main:app --reload`) and
+  dashboard (`streamlit run dashboard/app.py`), evaluates a company, and
+  tests the "Download PDF Report" button and/or the endpoint directly via
+  curl. Then Step 12b: React/Next.js dashboard rewrite.
+
+---
+
 ## 2026-10-09 — Step 10b (live run): Migration confirmed working against real PostgreSQL
 
 ### Completed
