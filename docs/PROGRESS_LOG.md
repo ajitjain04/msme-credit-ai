@@ -5,6 +5,90 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 11: FastAPI backend
+
+### Completed
+- Created `backend/schemas.py`: Pydantic v2 models.
+  - `MSMEInput` mirrors the RAW synthetic data's shape (not the fully
+    -preprocessed `FEATURE_COLUMNS` shape): callers submit human-readable
+    `business_category`/`state` strings and raw bank/GST/digital numbers,
+    never the internal encoded columns or the 3 derived ratios (those are
+    computed server-side — see Decisions below). Field bounds are strict
+    where mathematically true (ratios 0-1, scores 0-100, counts ≥ 0) and
+    loose (non-negative only) where they're just "what our synthetic
+    sample happened to cover" (rupee amounts). Added 2 cross-field
+    validators beyond the user's literal examples: GST fields must be
+    all-present/all-null in lockstep with `has_gst_registration`, and
+    `account_vintage_months <= age_of_business_years * 12` (same rule
+    Step 4's EDA checked).
+  - `EvaluateResponse`, `AssessmentRecord`/`CompanyHistoryResponse`,
+    `PortfolioAnalyticsResponse`.
+- Created `backend/crud.py`: plain functions (no FastAPI code) —
+  `create_company_and_assessment()` (insert-or-reuse Company + always-new
+  Assessment), `get_company_with_history()` (404-ready `None` return,
+  history sorted newest-first in Python without touching
+  `backend/db_models.py`'s relationship config), `get_portfolio_stats()`
+  (counts/percentages/average score across every assessment).
+- Created `backend/main.py`: `POST /api/v1/evaluate`, `GET
+  /api/v1/company/{company_id}` (proper 404), `GET
+  /api/v1/analytics/portfolio`, `GET /health`, CORS for any
+  localhost/127.0.0.1 origin+port, and a `lifespan` startup hook that
+  creates DB tables if missing (model + SHAP explainer loading already
+  happens once at import time, inside `model/scoring.py`/
+  `model/explainer.py` — the lifespan hook's docstring explains this
+  explicitly rather than pretending otherwise).
+  - `score_company()`/`explain_company()` reused unmodified; a new
+    `_build_feature_row()` helper encodes category/state via the saved
+    `category_encodings.json` and computes the 3 derived ratios by
+    calling `model.preprocessing.add_derived_ratios()` directly (no
+    formula retyped a third time).
+- **Verified end-to-end with FastAPI's `TestClient` against a throwaway
+  in-memory SQLite database** (dependency-overridden; the real
+  `data/processed/msme_credit.db` was never touched — confirmed unchanged
+  file size/timestamp afterward): `/health` 200; `POST /evaluate` 200 with
+  real probability/score/SHAP output; `GET /company/{id}` 200 with correct
+  history; `GET /company/<missing>` 404; `GET /analytics/portfolio` 200
+  with correct aggregates; re-assessing the same `company_id` grew its
+  history to 2 assessments (not 2 companies); invalid `business_category`,
+  mismatched GST fields, and `account_vintage_months > age*12` each
+  correctly returned 422. The server itself was not started by the
+  assistant — the user will start it manually.
+
+### Files created/changed
+- `backend/schemas.py`: created.
+- `backend/crud.py`: created.
+- `backend/main.py`: created.
+- `CLAUDE.md`: current step updated.
+
+### Decisions made
+- **Deliberate deviation from a literal reading of the request:**
+  `MSMEInput` excludes not just the encoded category columns (as
+  explicitly asked) but also the 3 derived ratio columns
+  (`net_cash_margin`, `cash_buffer_ratio`, `gst_to_bank_turnover_ratio`),
+  even though they're technically part of `FEATURE_COLUMNS` too. Asking
+  callers to submit both raw inflow/outflow AND a separately-computed
+  ratio would let a request contradict itself (ratio not matching the raw
+  numbers); computing it server-side with the exact same
+  `model.preprocessing.add_derived_ratios()` function removes that
+  entirely. Flagged here per the "explain changes in plain language"
+  rule in case this wasn't the intent.
+- `PortfolioAnalyticsResponse` counts every assessment, not just distinct
+  companies (`total_companies` is reported separately) — a company
+  re-assessed twice can land in a different risk band each time, so
+  collapsing to one row per company would hide real history.
+- Used `fastapi.testclient.TestClient` + a dependency-overridden in-memory
+  DB (not the real one) to verify all 3 endpoints and all 3 custom
+  validators actually work, without starting a real server or writing
+  test data into the real seeded database.
+
+### Next step
+- User starts the server manually
+  (`venv\Scripts\python.exe -m uvicorn backend.main:app --reload`) and
+  exercises it via `http://127.0.0.1:8000/docs`, then Step 12: the
+  Streamlit dashboard (`dashboard/app.py`) calling this API.
+
+---
+
 ## 2026-10-09 — Step 10: Database layer (SQLAlchemy + SQLite)
 
 ### Completed

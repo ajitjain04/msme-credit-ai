@@ -29,6 +29,7 @@ scripts, e.g. database seeding).
   in the same format already used in that file.
 
 ## Current step
-Step 10: database layer (`backend/database.py`, `backend/db_models.py`,
-`scripts/init_db.py`) written, not yet run. Next: run `scripts/init_db.py`
-to seed the DB, then Step 11 (backend API) and Step 12 (dashboard).
+Step 11: FastAPI backend (`backend/schemas.py`, `backend/crud.py`,
+`backend/main.py`) written and verified end-to-end against a throwaway
+in-memory DB, not yet started as a real server. Next: run the server
+yourself, then Step 12 (dashboard).
