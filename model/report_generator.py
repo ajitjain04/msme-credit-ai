@@ -73,8 +73,8 @@ _ENCODED_FEATURE_DECODERS: dict[str, dict[int, str]] = {
 }
 
 
-def _format_driver_value(feature_name: str, value: float) -> str:
-    """Formats one driver's raw value for display in the report.
+def format_driver_value(feature_name: str, value: float) -> str:
+    """Formats one driver's raw value for display.
 
     business_category_encoded/state_encoded are decoded back to their
     real category name (e.g. "retail", "Maharashtra") via
@@ -88,6 +88,15 @@ def _format_driver_value(feature_name: str, value: float) -> str:
     produced them), this falls back to showing the raw number rather than
     crashing the report -- a wrong-looking number is a far smaller problem
     than a report that fails to generate at all.
+
+    PUBLIC on purpose (no leading underscore): backend/main.py imports
+    this directly to compute ShapDriver.display_value for the live API
+    (consumed by the React dashboard and the old Streamlit dashboard),
+    so there is exactly ONE place that knows how to turn an encoded
+    business_category_encoded/state_encoded value back into a real name
+    -- this module's PDF rendering and the API's JSON responses both call
+    into this same function instead of maintaining two copies of the
+    same decoding logic.
     """
     decoder = _ENCODED_FEATURE_DECODERS.get(feature_name)
     if decoder is not None:
@@ -155,7 +164,7 @@ def _draw_driver_section(
         label = feature_label(feature_name)
         value = float(driver["value"])
         shap_value = float(driver["shap_value"])
-        value_display = _format_driver_value(feature_name, value)
+        value_display = format_driver_value(feature_name, value)
 
         c.setFillColor(black)
         c.setFont("Helvetica", 9)

@@ -5,6 +5,72 @@ Newest entries at the top. A new dated section is added at the end of every sess
 
 ---
 
+## 2026-10-09 — Step 12b-2: real evaluation form, scorecard & SHAP view (React)
+
+### Completed
+- **Built the real Next.js homepage**, replacing the Step 12b-1
+  placeholder entirely: `frontend/components/EvaluationForm.tsx` (same
+  fields/min/max/defaults as `dashboard/app.py`'s sidebar, grouped into
+  the same 4 sections, laid out as a multi-column form instead of a
+  cramped sidebar), `frontend/components/ScoreGauge.tsx` (1:1 port of
+  `build_score_gauge()` via `react-plotly.js`), and
+  `frontend/components/ShapDriverChart.tsx` (1:1 port of
+  `build_shap_driver_chart()`, same tornado layout). Added
+  `frontend/lib/types.ts` (TypeScript interfaces mirroring every
+  `backend/schemas.py` shape), `frontend/lib/api.ts` (typed axios client +
+  a shared `formatApiError()`), and `frontend/lib/featureLabels.ts` (ported
+  `FEATURE_LABELS`/`feature_label()`/`RISK_BAND_COLORS` from
+  `dashboard/components/charts.py`). `frontend/package.json` now actually
+  lists `plotly.js`/`react-plotly.js` (not just `recharts`, which is
+  removed). Portfolio Overview, Fairness Audit, and the PDF download
+  button are intentionally not built yet (next sub-step).
+- **Bug fix: encoded category/state values leaking into the UI.**
+  `business_category_encoded`/`state_encoded` were displaying as raw
+  numeric codes (e.g. "2.00") instead of readable names (e.g. "retail")
+  in the SHAP driver sentences -- the same problem Step 12e's PDF fix
+  solved, but that fix was local to `model/report_generator.py` only and
+  never reached the API's actual JSON responses. Fixed at the source in
+  `backend/main.py`: renamed `model/report_generator.py`'s
+  `_format_driver_value()` to public `format_driver_value()` (same logic,
+  zero duplication), added a `display_value: str` field to
+  `backend/schemas.py`'s `ShapDriver`, and populated it via a new
+  `_with_display_values()` helper at both `POST /api/v1/evaluate` and
+  `GET /api/v1/company/{company_id}`. Also updated `dashboard/app.py`'s
+  two driver sentences to use `display_value` instead of formatting the
+  raw encoded number themselves. Result: React, the old Streamlit
+  dashboard, and the PDF report now all show the exact same decoded text
+  from one source instead of three separately-maintained fixes. Verified
+  via `TestClient` against a throwaway in-memory DB: both endpoints'
+  `business_category_encoded` driver now returns `display_value: "retail"`
+  instead of a raw code; real Postgres untouched.
+- **Debugging lesson, not a bug:** a reported "CORS 400" turned out to be
+  a false alarm. The actual cause was the browser being on the Next.js
+  dev server's **Network** URL (`http://192.168.1.14:3000`) instead of
+  its **Local** URL (`http://localhost:3000`) -- the request's `Origin`
+  header then didn't match the backend's intentionally-scoped
+  localhost/127.0.0.1-only `allow_origin_regex`. No code was broken.
+  Verified this *before* changing anything: sent a real CORS preflight
+  (`OPTIONS /api/v1/evaluate`, `Origin: http://localhost:3000`) straight
+  at the live ASGI app via `TestClient` and got back `200` with correct
+  `access-control-*` headers, proving the existing regex already covered
+  port 3000 correctly. Fixed by using the correct (Local) URL, not by
+  editing `backend/main.py`'s CORS logic -- only added clarifying
+  comments there documenting why the existing config already covers any
+  localhost port.
+
+### Verified end-to-end
+Real browser session: filled in the evaluation form -> submitted ->
+real FastAPI `/evaluate` call -> real model score -> gauge chart render
+-> SHAP tornado chart render -> readable, correctly-decoded driver
+sentences, all in the browser, no placeholder data.
+
+### Next step
+Step 12b-3: PDF download button, Portfolio Overview page, and Fairness
+Audit page in the React frontend (the 3 pieces of Streamlit functionality
+not yet ported).
+
+---
+
 ## 2026-10-09 — Step 12b-1 (confirmed): react-plotly.js chosen; verified end-to-end
 
 ### Completed

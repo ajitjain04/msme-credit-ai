@@ -348,7 +348,7 @@ with tab2:
             for driver in result["top_positive_drivers"]:
                 st.write(
                     f"\U0001F53A **{feature_label(driver['feature'])}** = "
-                    f"{driver['value']:.2f} increased risk (SHAP {driver['shap_value']:+.3f})"
+                    f"{driver['display_value']} increased risk (SHAP {driver['shap_value']:+.3f})"
                 )
         else:
             st.caption("No risk-increasing factors in the top drivers.")
@@ -358,7 +358,7 @@ with tab2:
             for driver in result["top_negative_drivers"]:
                 st.write(
                     f"\U0001F53B **{feature_label(driver['feature'])}** = "
-                    f"{driver['value']:.2f} decreased risk (SHAP {driver['shap_value']:+.3f})"
+                    f"{driver['display_value']} decreased risk (SHAP {driver['shap_value']:+.3f})"
                 )
         else:
             st.caption("No risk-decreasing factors in the top drivers.")

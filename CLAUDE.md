@@ -106,28 +106,43 @@ score/risk-band/probability, readable SHAP driver sentences (decoded
 category/state names included), and the corrected footer.
 
 Step 12b-1: Next.js frontend scaffolded (frontend/) -- TypeScript, App
-Router, Tailwind, ESLint, axios added to package.json. Only a placeholder
-homepage built so far (a button that calls GET /health and shows the raw
-response) to prove frontend<->backend connectivity before any real UI.
-Live-verified end-to-end: `npm install` and `npm run dev` succeeded, and
-the placeholder homepage's health-check button successfully called the
-real FastAPI `GET /health` and displayed the live JSON response.
+Router, Tailwind, ESLint, axios added to package.json. Gauge-library
+decision resolved: react-plotly.js chosen over recharts (matches the
+literature review's "Plotly visualisations" spec and reuses the existing
+Python gauge config from Step 12).
 
-GAUGE CHART DECISION RESOLVED: react-plotly.js chosen over recharts --
-recharts has no native gauge primitive (would need a hand-rolled
-RadialBarChart + custom SVG needle), while react-plotly.js lets the
-credit-score gauge reuse almost the exact same
-`go.Indicator(mode="gauge+number", gauge={...})` spec the Python
-dashboard already has, and matches the literature review's Table 10
-"Plotly visualisations" spec. Not yet actioned: `frontend/package.json`
-still lists `recharts`, not `plotly.js`/`react-plotly.js` -- swapping
-that in (and running `npm install`) is the next sub-step, before building
-the real company-evaluation form + scorecard page.
+Step 12b-2 complete: real evaluation form, credit scorecard (gauge via
+react-plotly.js), and SHAP explainability chart built in the Next.js
+frontend (`frontend/components/EvaluationForm.tsx`/`ScoreGauge.tsx`/
+`ShapDriverChart.tsx`, `frontend/lib/{types,api,featureLabels}.ts`),
+matching the Streamlit dashboard's functionality. `frontend/package.json`
+now actually has `plotly.js`/`react-plotly.js` (recharts removed).
+
+Bug fix: business_category_encoded/state_encoded displayed as raw
+numeric codes ("2.00") instead of readable names in the SHAP driver list
+-- the Step 12e PDF fix never reached the API's JSON responses. Fixed at
+the source in `backend/main.py`: added `display_value: str` to
+`backend/schemas.py`'s `ShapDriver`, populated via `model.report_generator
+.format_driver_value()` (renamed public, same logic, zero duplication) at
+both `POST /api/v1/evaluate` and `GET /api/v1/company/{company_id}`.
+React, Streamlit, and the PDF now all show the same decoded value from
+one source. Verified via `TestClient` against a throwaway in-memory DB.
+
+Debugging lesson (not a bug): a reported "CORS 400" was a false alarm --
+caused by the browser being on the Next.js dev server's Network URL
+(`192.168.1.14:3000`) instead of its Local URL (`localhost:3000`), not a
+code issue. Verified the existing `allow_origin_regex` was already
+correct via `TestClient` before investigating further; no CORS code
+changed, just clarifying comments added.
+
+Step 12b-2 complete: live-verified end-to-end in a real browser --
+form submission -> real model score -> gauge chart -> SHAP chart ->
+readable driver sentences, all rendering correctly.
 
 ## Upgrade sequence (agreed order, do not resequence without asking)
 1. ~~Step 12c: probability calibration~~ — complete.
 2. ~~Step 12d: fairness / disparate impact ratio (DIR) auditing~~ — complete.
 3. ~~Step 10b: PostgreSQL migration~~ — complete.
 4. ~~Step 12e: PDF report generator~~ — complete.
-5. **Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard) — in progress, sub-step 1 of N done.**
+5. **Step 12b: React/Next.js dashboard rewrite (replaces the Streamlit dashboard) — in progress. Next: Step 12b-3 (PDF download button + Portfolio Overview + Fairness Audit pages in React).**
 6. Step 13: tests.

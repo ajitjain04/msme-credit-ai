@@ -74,6 +74,19 @@ class ShapDriver(BaseModel):
     feature: str
     value: float
     shap_value: float
+    display_value: str = Field(
+        ...,
+        description=(
+            "Human-readable version of `value`, ready to show directly to a user. "
+            "For business_category_encoded/state_encoded this is the decoded category/state "
+            "name (e.g. 'retail', not '2.00'); every other feature is just `value` formatted "
+            "to 2 decimal places. Computed by backend/main.py via "
+            "model.report_generator.format_driver_value() -- the exact same decoding logic "
+            "the PDF report uses -- so the API, the React dashboard, the PDF, and the "
+            "Streamlit dashboard all show identical text for these two features instead of "
+            "each one re-implementing the same category_encodings.json lookup separately."
+        ),
+    )
 
 
 class MSMEInput(BaseModel):

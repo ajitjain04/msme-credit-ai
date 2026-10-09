@@ -45,7 +45,7 @@ from model.config import FEATURE_COLUMNS  # noqa: E402
 from model.explainer import explain_company  # noqa: E402
 from model.fairness import MIN_COHORT_SIZE, compute_dir_audit  # noqa: E402
 from model.preprocessing import add_derived_ratios  # noqa: E402
-from model.report_generator import generate_pdf_report  # noqa: E402
+from model.report_generator import format_driver_value, generate_pdf_report  # noqa: E402
 from model.scoring import score_company  # noqa: E402
 
 # Importing model.scoring and model.explainer above already loaded the
@@ -81,9 +81,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Any localhost origin, any port -- Step 12's Streamlit dashboard runs on a
-# different port than this API, and may run on http or https during local
-# development.
+# ANY localhost/127.0.0.1 origin, ANY port -- (:\d+)? is optional, so this
+# already covers Streamlit's 8501, React/Next.js's 3000, Swagger UI's own
+# 8000, and any other local dev port, without listing ports one by one.
+# Deliberately NOT allow_origins=["*"]: this is a local-dev-only policy,
+# scoped to localhost/127.0.0.1, not "accept requests from anywhere."
+#
+# allow_methods/allow_headers are both "*" -- this already covers the
+# exact minimum Step 12b-2's POST /api/v1/evaluate preflight needs
+# (OPTIONS itself, POST, and the "Content-Type: application/json" header
+# axios sends), it is just intentionally broader so every GET endpoint
+# below is covered too without listing each method/header by hand.
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
@@ -129,6 +137,24 @@ def _build_feature_row(payload: MSMEInput) -> pd.Series:
     df["state_encoded"] = CATEGORY_ENCODINGS["state"][payload.state]
 
     return df.iloc[0][FEATURE_COLUMNS]
+
+
+def _with_display_values(drivers: list[dict]) -> list[dict]:
+    """Adds a `display_value` key to each raw SHAP driver dict (as
+    produced by model.explainer.explain_company() or stored in
+    Assessment.shap_top_drivers) using model.report_generator's
+    format_driver_value() -- the SAME decoding logic the PDF report uses.
+
+    Every ShapDriver this API ever returns passes through here first, so
+    business_category_encoded/state_encoded show their real category/
+    state name (not a raw numeric code like "2.00") to every consumer:
+    the React dashboard, the Streamlit dashboard, and (indirectly, since
+    it already called format_driver_value() directly) the PDF report.
+    """
+    return [
+        {**driver, "display_value": format_driver_value(driver["feature"], driver["value"])}
+        for driver in drivers
+    ]
 
 
 # banking/GST/digital snapshot fields that live on Assessment -- i.e.
@@ -193,8 +219,8 @@ def evaluate_company(payload: MSMEInput, db: Session = Depends(get_db)) -> Evalu
         default_probability=score_result["default_probability"],
         credit_score=score_result["credit_score"],
         risk_band=score_result["risk_band"],
-        top_positive_drivers=explanation["top_positive_contributors"],
-        top_negative_drivers=explanation["top_negative_contributors"],
+        top_positive_drivers=_with_display_values(explanation["top_positive_contributors"]),
+        top_negative_drivers=_with_display_values(explanation["top_negative_contributors"]),
         assessed_at=assessment.assessed_at,
     )
 
@@ -223,8 +249,12 @@ def get_company(company_id: str, db: Session = Depends(get_db)) -> CompanyHistor
                 "default_probability": a.default_probability,
                 "credit_score": a.credit_score,
                 "risk_band": a.risk_band,
-                "top_positive_drivers": a.shap_top_drivers.get("top_positive_contributors", []),
-                "top_negative_drivers": a.shap_top_drivers.get("top_negative_contributors", []),
+                "top_positive_drivers": _with_display_values(
+                    a.shap_top_drivers.get("top_positive_contributors", [])
+                ),
+                "top_negative_drivers": _with_display_values(
+                    a.shap_top_drivers.get("top_negative_contributors", [])
+                ),
             }
             for a in company.assessments
         ],
