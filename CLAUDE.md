@@ -28,4 +28,5 @@ dashboard/ (Streamlit), tests/, docs/, notebooks/.
   in the same format already used in that file.
 
 ## Current step
-Step 5 complete: preprocessing pipeline. Next: Step 6 (model training).
+Step 7 complete: class-imbalance fix + Optuna tuning (Logistic Regression
+won, C=0.00603). Next: Step 8 (credit score + risk band conversion).

@@ -1,0 +1,10 @@
+{
+  "model_name": "Logistic Regression",
+  "best_params": {
+    "C": 0.0060252157362038605
+  },
+  "best_cv_roc_auc": 0.7409566339206437,
+  "n_trials": 50,
+  "n_cv_folds": 5,
+  "random_state": 42
+}

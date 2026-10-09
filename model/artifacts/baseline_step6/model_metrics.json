@@ -1,5 +1,24 @@
 {
-  "step6_baseline_test_metrics": [
+  "best_model": "Logistic Regression",
+  "best_model_metrics": {
+    "model_name": "Logistic Regression",
+    "roc_auc": 0.744282134246923,
+    "precision_default": 0.5,
+    "recall_default": 0.10135135135135136,
+    "f1_default": 0.16853932584269662,
+    "ks_statistic": 0.4215201116609567,
+    "confusion_matrix": [
+      [
+        837,
+        15
+      ],
+      [
+        133,
+        15
+      ]
+    ]
+  },
+  "all_model_metrics": [
     {
       "model_name": "Logistic Regression",
       "roc_auc": 0.744282134246923,
@@ -72,51 +91,5 @@
         ]
       ]
     }
-  ],
-  "step7_balanced_cv_metrics": {
-    "Logistic Regression": {
-      "cv_roc_auc": 0.7382279736582893,
-      "cv_pr_auc": 0.37811126788991506,
-      "cv_recall_default": 0.629952998148412
-    },
-    "Random Forest": {
-      "cv_roc_auc": 0.7135633696475578,
-      "cv_pr_auc": 0.33987562908502017,
-      "cv_recall_default": 0.2922233300099701
-    },
-    "XGBoost": {
-      "cv_roc_auc": 0.6691573711362788,
-      "cv_pr_auc": 0.3147539987508336,
-      "cv_recall_default": 0.26010539809143995
-    },
-    "LightGBM": {
-      "cv_roc_auc": 0.6941340826338029,
-      "cv_pr_auc": 0.3311728650912492,
-      "cv_recall_default": 0.33110667996011967
-    }
-  },
-  "step7_winning_model_type": "Logistic Regression",
-  "step7_best_params": {
-    "C": 0.0060252157362038605
-  },
-  "step7_tuned_test_metrics": {
-    "threshold_used": 0.5,
-    "roc_auc": 0.7436794188554752,
-    "pr_auc": 0.3501319831864357,
-    "precision_default": 0.29819277108433734,
-    "recall_default": 0.668918918918919,
-    "f1_default": 0.4125,
-    "ks_statistic": 0.4003616292348687,
-    "confusion_matrix": [
-      [
-        619,
-        233
-      ],
-      [
-        49,
-        99
-      ]
-    ]
-  },
-  "note": "step6_baseline_test_metrics and step7_tuned_test_metrics were both measured on data/processed/test.csv. step7_balanced_cv_metrics is 5-fold stratified cross-validation on data/processed/train.csv only. tuned_test_metrics' threshold (0.5) is provisional -- Step 8 sets it properly."
+  ]
 }
