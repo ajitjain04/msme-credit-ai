@@ -19,10 +19,12 @@ import sys
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -36,13 +38,17 @@ from backend.database import Base, engine, get_db  # noqa: E402
 from backend.schemas import (  # noqa: E402
     CATEGORY_ENCODINGS,
     CompanyHistoryResponse,
+    CompanyListResponse,
     EvaluateResponse,
     FairnessAuditResponse,
     MSMEInput,
+    ParsedBankStatement,
     PortfolioAnalyticsResponse,
 )
+from model.bank_statement_parser import BankStatementError, parse_bank_statement_csv  # noqa: E402
 from model.config import FEATURE_COLUMNS  # noqa: E402
 from model.explainer import explain_company  # noqa: E402
+from model.explanation_text import generate_driver_explanation, generate_overall_summary  # noqa: E402
 from model.fairness import MIN_COHORT_SIZE, compute_dir_audit  # noqa: E402
 from model.preprocessing import add_derived_ratios  # noqa: E402
 from model.report_generator import format_driver_value, generate_pdf_report  # noqa: E402
@@ -151,10 +157,24 @@ def _with_display_values(drivers: list[dict]) -> list[dict]:
     the React dashboard, the Streamlit dashboard, and (indirectly, since
     it already called format_driver_value() directly) the PDF report.
     """
-    return [
-        {**driver, "display_value": format_driver_value(driver["feature"], driver["value"])}
-        for driver in drivers
-    ]
+    result = []
+    for driver in drivers:
+        # driver["value"] is None for a GST-unregistered company (see
+        # model.explainer._safe_feature_value()) -- format_driver_value()
+        # turns that into "Not available (GST not registered)", and
+        # generate_driver_explanation() then words the sentence around it,
+        # so neither call can crash on a missing value.
+        display_value = format_driver_value(driver["feature"], driver["value"])
+        result.append(
+            {
+                **driver,
+                "display_value": display_value,
+                "explanation": generate_driver_explanation(
+                    driver["feature"], driver["shap_value"], display_value
+                ),
+            }
+        )
+    return result
 
 
 # banking/GST/digital snapshot fields that live on Assessment -- i.e.
@@ -221,8 +241,49 @@ def evaluate_company(payload: MSMEInput, db: Session = Depends(get_db)) -> Evalu
         risk_band=score_result["risk_band"],
         top_positive_drivers=_with_display_values(explanation["top_positive_contributors"]),
         top_negative_drivers=_with_display_values(explanation["top_negative_contributors"]),
+        overall_summary=generate_overall_summary(
+            score_result["risk_band"],
+            score_result["credit_score"],
+            score_result["default_probability"],
+            explanation["top_positive_contributors"] + explanation["top_negative_contributors"],
+        ),
         assessed_at=assessment.assessed_at,
     )
+
+
+MAX_STATEMENT_BYTES = 5 * 1024 * 1024  # 5 MB is far more than a CSV statement needs
+
+
+@app.post("/api/v1/parse-bank-statement", response_model=ParsedBankStatement)
+def parse_bank_statement(file: UploadFile = File(...)) -> ParsedBankStatement:
+    """Reads an uploaded bank-statement CSV (columns: date, description,
+    debit, credit, balance -- see model/bank_statement_parser.py) and
+    returns the 5 banking fields it can compute, named exactly like the
+    evaluate form's fields. Nothing is saved. Returns 400 with a
+    readable message if the file is too big or malformed."""
+    contents = file.file.read(MAX_STATEMENT_BYTES + 1)
+    if len(contents) > MAX_STATEMENT_BYTES:
+        raise HTTPException(status_code=400, detail="File is too large (limit 5 MB).")
+    try:
+        return ParsedBankStatement(**parse_bank_statement_csv(BytesIO(contents)))
+    except BankStatementError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+COMPANY_LIST_LIMIT = 50
+
+
+@app.get("/api/v1/companies", response_model=CompanyListResponse)
+def list_companies(q: Optional[str] = None, db: Session = Depends(get_db)) -> CompanyListResponse:
+    """Lists companies (newest first) so the UI can browse/search instead
+    of needing an exact ID. `q` (optional) keeps only companies whose name
+    or ID contains it, case-insensitive. Each item also carries the
+    company's latest risk band, score and assessment date.
+
+    Capped at COMPANY_LIST_LIMIT (50) results; offset/limit pagination
+    could be added later if the table grows."""
+    companies = crud.list_companies(db, q=q.strip() if q else None, limit=COMPANY_LIST_LIMIT)
+    return CompanyListResponse(companies=companies, count=len(companies))
 
 
 @app.get("/api/v1/company/{company_id}", response_model=CompanyHistoryResponse)
@@ -254,6 +315,13 @@ def get_company(company_id: str, db: Session = Depends(get_db)) -> CompanyHistor
                 ),
                 "top_negative_drivers": _with_display_values(
                     a.shap_top_drivers.get("top_negative_contributors", [])
+                ),
+                "overall_summary": generate_overall_summary(
+                    a.risk_band,
+                    a.credit_score,
+                    a.default_probability,
+                    a.shap_top_drivers.get("top_positive_contributors", [])
+                    + a.shap_top_drivers.get("top_negative_contributors", []),
                 ),
             }
             for a in company.assessments
@@ -295,12 +363,18 @@ def get_company_pdf_report(company_id: str, db: Session = Depends(get_db)) -> St
         "credit_score": latest_assessment.credit_score,
         "risk_band": latest_assessment.risk_band,
     }
+    raw_positive = latest_assessment.shap_top_drivers.get("top_positive_contributors", [])
+    raw_negative = latest_assessment.shap_top_drivers.get("top_negative_contributors", [])
     explanation_result = {
-        "top_positive_contributors": latest_assessment.shap_top_drivers.get(
-            "top_positive_contributors", []
-        ),
-        "top_negative_contributors": latest_assessment.shap_top_drivers.get(
-            "top_negative_contributors", []
+        # _with_display_values() adds each driver's plain-English
+        # `explanation` sentence, which the PDF prints under its bar.
+        "top_positive_contributors": _with_display_values(raw_positive),
+        "top_negative_contributors": _with_display_values(raw_negative),
+        "overall_summary": generate_overall_summary(
+            latest_assessment.risk_band,
+            latest_assessment.credit_score,
+            latest_assessment.default_probability,
+            raw_positive + raw_negative,
         ),
     }
 

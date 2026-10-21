@@ -1,0 +1,41 @@
+date,description,debit,credit,balance
+2026-04-02,NEFT-Customer Sharma Enterprises,,185000,385000
+2026-04-05,NEFT-Supplier Raw Materials,120000,,265000
+2026-04-12,UPI-Customer receipts,,150000,415000
+2026-04-15,Salary payout,60000,,355000
+2026-04-20,Rent - shop premises,25000,,330000
+2026-04-26,POS settlement,,95000,425000
+2026-05-02,NEFT-Customer Sharma Enterprises,,190000,615000
+2026-05-06,NEFT-Supplier Raw Materials,150000,,465000
+2026-05-12,UPI-Customer receipts,,140000,605000
+2026-05-15,Salary payout,60000,,545000
+2026-05-20,Rent - shop premises,25000,,520000
+2026-05-26,POS settlement,,88000,608000
+2026-06-02,NEFT-Customer Sharma Enterprises,,120000,728000
+2026-06-05,NEFT-Supplier Raw Materials,350000,,378000
+2026-06-10,UPI-Customer receipts,,90000,468000
+2026-06-15,Salary payout,60000,,408000
+2026-06-17,Machinery purchase advance,385000,,23000
+2026-06-19,Cheque returned - insufficient funds charges,590,,22410
+2026-06-24,POS settlement,,80000,102410
+2026-06-25,Rent - shop premises,25000,,77410
+2026-07-02,NEFT-Customer Sharma Enterprises,,150000,227410
+2026-07-06,NEFT-Supplier Raw Materials,110000,,117410
+2026-07-12,UPI-Customer receipts,,130000,247410
+2026-07-15,Salary payout,60000,,187410
+2026-07-20,Rent - shop premises,25000,,162410
+2026-07-26,POS settlement,,85000,247410
+2026-08-03,NEFT-Customer Sharma Enterprises,,170000,417410
+2026-08-07,NEFT-Supplier Raw Materials,140000,,277410
+2026-08-12,UPI-Customer receipts,,120000,397410
+2026-08-15,Salary payout,60000,,337410
+2026-08-19,Bulk order supplier advance,300000,,37410
+2026-08-21,ECS return - insufficient funds,610,,36800
+2026-08-24,POS settlement,,110000,146800
+2026-08-26,Rent - shop premises,25000,,121800
+2026-09-02,NEFT-Customer Sharma Enterprises,,160000,281800
+2026-09-06,NEFT-Supplier Raw Materials,130000,,151800
+2026-09-11,UPI-Customer receipts,,125000,276800
+2026-09-15,Salary payout,60000,,216800
+2026-09-20,Rent - shop premises,25000,,191800
+2026-09-26,POS settlement,,92000,283800

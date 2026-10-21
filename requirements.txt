@@ -25,6 +25,7 @@ pydantic
 sqlalchemy
 psycopg2-binary
 python-dotenv
+python-multipart  # needed by FastAPI for file uploads
 
 # Reporting
 reportlab

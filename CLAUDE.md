@@ -13,19 +13,19 @@ a credit score (300–900), assign risk bands, and explain each score with SHAP.
 ## Tech stack
 Python 3.11, pandas, scikit-learn, XGBoost/LightGBM, SHAP, Optuna,
 FastAPI + Pydantic, SQLAlchemy + PostgreSQL (SQLite fallback if
-`DATABASE_URL` isn't set — see `backend/database.py`), Streamlit (being
-replaced by the Next.js frontend, Step 12b), pytest. Frontend (in
-progress): Next.js 15 + React 19 + TypeScript, App Router, Tailwind CSS,
-axios, react-plotly.js (chosen over recharts -- matches the literature
-review's "Plotly visualisations" spec and reuses the existing Python
-gauge config from Step 12; `plotly.js`/`react-plotly.js` still need
-adding to `frontend/package.json`).
+`DATABASE_URL` isn't set — see `backend/database.py`), Streamlit (fully
+replaced by the frontend below), pytest. Frontend: Vite + React 19 +
+TypeScript + Tailwind CSS 4 SPA (a Figma Make export, native `fetch` in
+`frontend/src/api.ts` -- no axios). Replaces the earlier Next.js
+frontend (Step 12b), which is kept untouched at
+`frontend_nextjs_backup/` as a reference, not deleted.
 
 ## Folder layout
 data/ (generation + datasets), model/ (ML pipeline), backend/ (FastAPI),
-dashboard/ (Streamlit — being replaced), frontend/ (Next.js, replaces
-dashboard/), tests/, docs/, notebooks/, scripts/ (one-off setup scripts,
-e.g. database seeding).
+dashboard/ (Streamlit — fully replaced), frontend/ (Vite + React SPA,
+current), frontend_nextjs_backup/ (the superseded Next.js frontend,
+untouched reference only), tests/, docs/, notebooks/, scripts/ (one-off
+setup scripts, e.g. database seeding).
 
 ## Coding rules
 - The developer is a beginner: add clear comments and docstrings, keep code simple.
@@ -178,6 +178,23 @@ available (GST not registered)"), `backend/schemas.py`'s
 `ShapDriver.value`, and `frontend/lib/types.ts` -- the React/PDF
 rendering layers needed no changes since they already only consumed
 `display_value`, never the raw `value`.
+
+**Frontend replaced (unplanned, between Step 13 and Step 14):** the
+Next.js frontend (Step 12b) is renamed to `frontend_nextjs_backup/`
+(kept, untouched). `frontend/` is now a Figma-Make-generated Vite +
+React 19 + TypeScript + Tailwind 4 SPA, audited function-by-function
+against `backend/schemas.py`/`backend/main.py` and fixed: `buildPayload()`
+had every `MSMEInput` field name wrong (so every evaluate call 422'd,
+100% of the time), the SHAP/portfolio/fairness pages were all reading
+field names that don't exist on `EvaluateResponse`/
+`PortfolioAnalyticsResponse`/`FairnessAuditResponse` (guaranteed-empty
+displays), plus a real TS syntax error and 2 missing-`React`-import type
+references. `frontend/vite.config.ts` and `index.html` were simplified
+after deleting `frontend/.figma/`, `AGENTS.md`, `CLAUDE.md` (Figma Make
+tooling, not needed for local dev). `frontend/.env.local.example` added
+(`VITE_API_URL=http://localhost:8000`). Not yet run (`npm install`/
+`npm run dev` pending, per instructions) -- see docs/PROGRESS_LOG.md's
+2026-10-11 entry for the full file-by-file diff.
 
 ## Upgrade sequence (agreed order, do not resequence without asking)
 1. ~~Step 12c: probability calibration~~ — complete.

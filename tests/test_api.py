@@ -212,3 +212,40 @@ def test_fairness_audit_returns_well_formed_response(client):
         assert "cohort_dimension" in excluded
         assert "cohort_value" in excluded
         assert "cohort_size" in excluded
+
+
+def test_list_companies_without_query_returns_all(client):
+    client.post("/api/v1/evaluate", json=VALID_PAYLOAD)
+    client.post("/api/v1/evaluate", json=RISKIER_PAYLOAD)
+
+    response = client.get("/api/v1/companies")
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["count"] == 2
+    names = {c["company_name"] for c in body["companies"]}
+    assert names == {"Shree Balaji Traders", "Risky Traders Co"}
+    for company in body["companies"]:
+        assert company["company_id"]
+        assert company["latest_risk_band"] in VALID_RISK_BANDS
+        assert 300 <= company["latest_credit_score"] <= 900
+        assert company["latest_assessed_at"]
+
+
+def test_list_companies_query_filters_by_name_case_insensitively(client):
+    client.post("/api/v1/evaluate", json=VALID_PAYLOAD)
+    client.post("/api/v1/evaluate", json=RISKIER_PAYLOAD)
+
+    body = client.get("/api/v1/companies", params={"q": "BALAJI"}).json()
+    assert body["count"] == 1
+    assert body["companies"][0]["company_name"] == "Shree Balaji Traders"
+
+
+def test_list_companies_query_filters_by_id_and_handles_no_match(client):
+    company_id = client.post("/api/v1/evaluate", json=VALID_PAYLOAD).json()["company_id"]
+
+    by_id = client.get("/api/v1/companies", params={"q": company_id[-6:]}).json()
+    assert [c["company_id"] for c in by_id["companies"]] == [company_id]
+
+    none = client.get("/api/v1/companies", params={"q": "zzz-no-such-company"}).json()
+    assert none == {"companies": [], "count": 0}

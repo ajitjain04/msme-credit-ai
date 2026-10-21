@@ -110,6 +110,44 @@ def get_company_with_history(db: Session, company_id: str) -> Optional[Company]:
     return company
 
 
+def list_companies(db: Session, q: Optional[str] = None, limit: int = 50) -> list[dict[str, Any]]:
+    """Returns up to `limit` companies (newest first) as plain dicts, each
+    with its most recent assessment's risk band / score / date (or None for
+    those if the company somehow has no assessment).
+
+    If `q` is given, only companies whose company_name OR company_id
+    contains it (case-insensitive) are returned.
+
+    Reads each company's `.assessments` relationship, which costs one
+    extra query per company -- fine for a cap of 50. If the table grows
+    large, replace it with a single JOIN and add offset-based pagination.
+    """
+    stmt = select(Company).order_by(Company.created_at.desc()).limit(limit)
+
+    if q:
+        # Escape LIKE wildcards so a typed "%" or "_" is matched literally.
+        escaped = q.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        stmt = stmt.where(
+            func.lower(Company.company_name).like(pattern, escape="\\")
+            | func.lower(Company.company_id).like(pattern, escape="\\")
+        )
+
+    results: list[dict[str, Any]] = []
+    for company in db.execute(stmt).scalars().all():
+        latest = max(company.assessments, key=lambda a: a.assessed_at, default=None)
+        results.append(
+            {
+                "company_id": company.company_id,
+                "company_name": company.company_name,
+                "latest_risk_band": latest.risk_band if latest else None,
+                "latest_credit_score": latest.credit_score if latest else None,
+                "latest_assessed_at": latest.assessed_at if latest else None,
+            }
+        )
+    return results
+
+
 def get_all_assessments(db: Session) -> list[Assessment]:
     """Returns every Assessment row in the database -- the one shared
     query `get_portfolio_stats()` and Step 12d's `model.fairness.

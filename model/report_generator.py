@@ -35,6 +35,7 @@ from typing import Any, Optional
 
 from reportlab.lib.colors import HexColor, black, white
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -45,7 +46,10 @@ from dashboard.components.charts import RISK_BAND_COLORS, feature_label  # noqa:
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
 MARGIN = 50
-TOP_DRIVERS_SHOWN = 5
+# 4 (was 5) per section: the new summary paragraph and wrapped
+# explanation sentences take more vertical space, and 4+4 rows is what
+# fits on the one page above the footer.
+TOP_DRIVERS_SHOWN = 4
 
 CATEGORY_ENCODINGS_PATH = PROJECT_ROOT / "model" / "artifacts" / "category_encodings.json"
 with open(CATEGORY_ENCODINGS_PATH) as _f:
@@ -142,6 +146,17 @@ DISCLAIMER_LINES = (
 )
 
 
+def _pdf_safe(text: str) -> str:
+    """Makes text safe for reportlab's built-in Helvetica, which only
+    supports Latin-1 characters. dashboard/components/charts.py's feature
+    labels contain the rupee sign (U+20B9), which Helvetica can't draw --
+    it showed up in the PDF as a black square. We swap it for "Rs." here
+    (rather than editing charts.py, which the Streamlit dashboard shares
+    and renders fine), and drop any other unsupported character."""
+    text = text.replace("₹", "Rs.")
+    return text.encode("latin-1", errors="ignore").decode("latin-1")
+
+
 def _format_timestamp(value: Any) -> str:
     """Formats a datetime (or an already-string timestamp, or nothing) for
     display in the report header."""
@@ -191,7 +206,7 @@ def _draw_driver_section(
 
     for driver in drivers[:TOP_DRIVERS_SHOWN]:
         feature_name = driver["feature"]
-        label = feature_label(feature_name)
+        label = _pdf_safe(feature_label(feature_name))
         # Deliberately NOT float(driver["value"]) -- that crashes when a
         # GST-unregistered company's driver value is None (see
         # model/explainer.py's _safe_feature_value()). Pass it through
@@ -210,10 +225,18 @@ def _draw_driver_section(
         c.rect(bar_x, y - 2, bar_len, 9, fill=1, stroke=0)
         y -= 13
 
+        # Prefer the rule-based plain-English sentence from
+        # model/explanation_text.py (passed in by backend/main.py); fall
+        # back to the older template for callers that don't supply one.
+        sentence = driver.get("explanation") or _driver_sentence(
+            label, value_display, increases_risk=shap_value > 0
+        )
         c.setFillColor(black)
         c.setFont("Helvetica-Oblique", 8)
-        c.drawString(MARGIN, y, _driver_sentence(label, value_display, increases_risk=shap_value > 0))
-        y -= 16
+        for line in simpleSplit(sentence, "Helvetica-Oblique", 8, PAGE_WIDTH - 2 * MARGIN):
+            c.drawString(MARGIN, y, line)
+            y -= 10
+        y -= 6
 
     return y
 
@@ -245,6 +268,9 @@ def generate_pdf_report(
         explanation_result = {
             "top_positive_contributors": [{"feature": str, "value": float, "shap_value": float}, ...],
             "top_negative_contributors": [...],
+            # optional, from model/explanation_text.py:
+            "overall_summary": str,                 # paragraph printed near the top
+            # and each driver dict may carry "explanation": str
         }
     """
     buffer = BytesIO()
@@ -295,7 +321,20 @@ def generate_pdf_report(
     y -= badge_height + 32
     c.setStrokeColor(HexColor("#cccccc"))
     c.line(MARGIN, y, PAGE_WIDTH - MARGIN, y)
-    y -= 26
+    y -= 22
+
+    # --- Plain-English overall summary (optional) ------------------------
+    overall_summary = explanation_result.get("overall_summary")
+    if overall_summary:
+        c.setFillColor(black)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(MARGIN, y, "Summary")
+        y -= 16
+        c.setFont("Helvetica", 10)
+        for line in simpleSplit(overall_summary, "Helvetica", 10, PAGE_WIDTH - 2 * MARGIN):
+            c.drawString(MARGIN, y, line)
+            y -= 13
+        y -= 14
 
     # --- SHAP drivers ----------------------------------------------------
     positive_drivers = explanation_result.get("top_positive_contributors", [])

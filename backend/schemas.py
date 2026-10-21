@@ -97,6 +97,14 @@ class ShapDriver(BaseModel):
             "instead of each one re-implementing the same logic separately."
         ),
     )
+    explanation: str = Field(
+        ...,
+        description=(
+            "One plain-English sentence describing this driver's effect, e.g. 'The average "
+            "number of days GST returns are filed late (12.00) strongly increased the assessed "
+            "risk.' Rule-based (no LLM) -- see model/explanation_text.py."
+        ),
+    )
 
 
 class MSMEInput(BaseModel):
@@ -228,6 +236,9 @@ class EvaluateResponse(BaseModel):
     risk_band: str
     top_positive_drivers: list[ShapDriver]
     top_negative_drivers: list[ShapDriver]
+    overall_summary: str = Field(
+        ..., description="One-paragraph plain-English summary of the assessment (model/explanation_text.py)."
+    )
     assessed_at: datetime
 
 
@@ -243,6 +254,7 @@ class AssessmentRecord(BaseModel):
     risk_band: str
     top_positive_drivers: list[ShapDriver]
     top_negative_drivers: list[ShapDriver]
+    overall_summary: str
 
 
 class CompanyHistoryResponse(BaseModel):
@@ -259,6 +271,38 @@ class CompanyHistoryResponse(BaseModel):
     employee_count: int
     created_at: datetime
     assessments: list[AssessmentRecord]
+
+
+class ParsedBankStatement(BaseModel):
+    """Response for POST /api/v1/parse-bank-statement. Field names match
+    the matching MSMEInput fields, so a client can copy them straight into
+    an evaluate request."""
+
+    avg_monthly_inflow: float
+    avg_monthly_outflow: float
+    min_ending_balance_avg: float
+    bounce_count_last_6m: int
+    account_vintage_months: int
+
+
+class CompanyListItem(BaseModel):
+    """One row of GET /api/v1/companies: a company plus its most recent
+    assessment's headline numbers (all None if it has no assessment)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    company_id: str
+    company_name: str
+    latest_risk_band: Optional[str] = None
+    latest_credit_score: Optional[int] = None
+    latest_assessed_at: Optional[datetime] = None
+
+
+class CompanyListResponse(BaseModel):
+    """Response for GET /api/v1/companies."""
+
+    companies: list[CompanyListItem]
+    count: int = Field(..., description="Number of companies returned (capped at 50).")
 
 
 class FairnessCohortAudit(BaseModel):

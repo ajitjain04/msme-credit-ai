@@ -17,3 +17,4 @@ frontend/out/
 frontend/.env.local
 frontend/npm-debug.log*
 frontend/.vercel
+frontend_nextjs_backup/
