@@ -170,6 +170,82 @@ def generate_overall_summary(
     return " ".join(sentences)
 
 
+# ---------------------------------------------------------------------------
+# PLAIN-ENGLISH LAYER (for business owners; no feature names, no numbers)
+# ---------------------------------------------------------------------------
+# One everyday phrase per feature, written as a TOPIC ("how regularly GST
+# returns are filed") rather than as a value ("consistent GST filing").
+# That is deliberate: a SHAP value tells us the direction this feature moved
+# the estimate for THIS business compared with a typical one, not what the
+# raw value was, so we only say a topic "helped" or "held back" the score --
+# never that the business is "good" or "bad" at it. Change wording here only.
+PLAIN_TOPICS: dict[str, str] = {
+    "age_of_business_years": "how long the business has been operating",
+    "business_category_encoded": "the type of business",
+    "state_encoded": "the state the business operates in",
+    "employee_count": "the size of the team",
+    "avg_monthly_inflow": "the amount of money coming in each month",
+    "avg_monthly_outflow": "the amount of money going out each month",
+    "min_ending_balance_avg": "how much money is left in the account at the end of the month",
+    "bounce_count_last_6m": "bounced payments in the last 6 months",
+    "account_vintage_months": "how long the bank account has been open",
+    "cash_flow_volatility": "how much cash flow rises and falls from month to month",
+    "has_gst_registration": "whether the business is registered for GST",
+    "gst_filing_regularity_score": "how regularly GST returns are filed",
+    "annual_turnover_gst": "the yearly sales declared in GST returns",
+    "gst_filing_delay_days_avg": "how late GST returns tend to be filed",
+    "upi_transaction_volume_ratio": "how much of the business is paid for through UPI",
+    "pos_terminal_active_status": "whether a card-payment machine is in use",
+    "digital_payment_adoption_score": "how widely digital payments are used",
+    "net_cash_margin": "how much money is left over after expenses",
+    "cash_buffer_ratio": "the cash cushion kept compared with monthly spending",
+    "gst_to_bank_turnover_ratio": "how well GST-declared sales match the bank account",
+}
+
+_PLAIN_BAND_OPENERS = {
+    "Low Risk": "Overall, this business falls in the lower-risk group.",
+    "Medium Risk": "Overall, this business falls in the middle risk group.",
+    "High Risk": "Overall, this business falls in the higher-risk group.",
+}
+
+
+def _plain_topic(feature_name: str) -> str:
+    """Everyday phrase for a feature; unknown features fall back to the
+    technical description (still no raw underscores)."""
+    return PLAIN_TOPICS.get(feature_name, _describe(feature_name))
+
+
+def generate_plain_summary(
+    risk_band: str,
+    top_drivers: list[dict[str, Any]],
+) -> str:
+    """2-4 plain sentences for a non-technical reader: the risk group, what
+    helped most, what held back most, and a one-line caveat.
+
+    No feature names, no SHAP numbers, no score figures. Only the SHAP SIGN
+    and rank are used: negative SHAP lowers default risk ("helped"),
+    positive SHAP raises it ("held back"). `top_drivers` has the same shape
+    as for generate_overall_summary().
+    """
+    sentences = [_PLAIN_BAND_OPENERS.get(risk_band, "This business has been assessed by the model.")]
+
+    helping = sorted((d for d in top_drivers if d["shap_value"] < 0), key=lambda d: d["shap_value"])[:2]
+    hurting = sorted(
+        (d for d in top_drivers if d["shap_value"] > 0), key=lambda d: d["shap_value"], reverse=True
+    )[:2]
+
+    if helping:
+        sentences.append(
+            f"The score is helped most by {_join_phrases([_plain_topic(d['feature']) for d in helping])}."
+        )
+    if hurting:
+        sentences.append(
+            f"It is held back most by {_join_phrases([_plain_topic(d['feature']) for d in hurting])}."
+        )
+    sentences.append("This is a statistical estimate from the information provided, not a lending decision.")
+    return " ".join(sentences)
+
+
 if __name__ == "__main__":
     print("--- Risk-increasing driver (strong) ---")
     print(generate_driver_explanation("gst_filing_delay_days_avg", 1.526, "12.00"))

@@ -1268,6 +1268,168 @@ function extractShap(result: ApiRecord): ShapFactor[] {
   return []
 }
 
+// ---------------------------------------------------------------------------
+// Typical Business Loan Rates in the Market (static reference table).
+// NOT personalised: the backend (model/market_rates.py) sends the identical
+// list to everyone, so the cards are unranked. The EMI calculator below is
+// pure arithmetic, so it lives here and recalculates live.
+// ---------------------------------------------------------------------------
+type MarketRate = {
+  name: string
+  rate_range: string
+  rate_min: number
+  rate_max: number | null
+  note: string
+  url: string
+}
+
+function formatRupees(value: number) {
+  return `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(value)}`
+}
+
+/** Standard reducing-balance EMI: P*r*(1+r)^n / ((1+r)^n - 1), r = annual/12/100. */
+function calculateEmi(principal: number, annualRatePct: number, months: number) {
+  if (!(principal > 0) || !(months > 0) || !(annualRatePct >= 0)) return null
+  const r = annualRatePct / 12 / 100
+  const emi =
+    r === 0
+      ? principal / months
+      : (principal * r * Math.pow(1 + r, months)) /
+        (Math.pow(1 + r, months) - 1)
+  const totalPayable = emi * months
+  return { emi, totalPayable, totalInterest: totalPayable - principal }
+}
+
+function MarketRatesSection({
+  rates,
+  disclaimer,
+}: {
+  rates: MarketRate[]
+  disclaimer: string
+}) {
+  const [selected, setSelected] = useState(0)
+  const [amount, setAmount] = useState("500000")
+  const [tenure, setTenure] = useState("36")
+  const [rate, setRate] = useState(rates.length ? String(rates[0].rate_min) : "12")
+
+  const pick = (index: number) => {
+    setSelected(index)
+    // Pre-fill with the lowest published rate; the field stays editable.
+    setRate(String(rates[index].rate_min))
+  }
+
+  const result = calculateEmi(Number(amount), Number(rate), Number(tenure))
+  const bank = rates[selected]
+
+  return (
+    <section className="explain-card">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Market reference</span>
+          <h2>Typical Business Loan Rates in the Market</h2>
+        </div>
+      </div>
+      <div className="illustrative-banner" role="note">
+        <ShieldCheck size={22} />
+        <div>
+          <strong>{disclaimer}</strong>
+        </div>
+      </div>
+      <div className="lender-grid">
+        {rates.map((item, index) => (
+          <div
+            key={item.name}
+            className={cx("lender-card", index === selected && "selected")}
+          >
+            <button
+              type="button"
+              className="lender-select"
+              onClick={() => pick(index)}
+              aria-pressed={index === selected}
+            >
+              <strong>{item.name}</strong>
+              <b className="lender-rate">{item.rate_range}</b>
+              <small>{item.note}</small>
+            </button>
+            <a
+              className="button button-secondary lender-apply"
+              href={item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Apply Now ↗
+            </a>
+          </div>
+        ))}
+      </div>
+      <div className="emi-card">
+        <div className="card-title">
+          <span>
+            <IndianRupee size={18} />
+          </span>
+          <div>
+            <h2>EMI calculator</h2>
+            <p>
+              {bank
+                ? `Rate pre-filled from ${bank.name}'s lowest published rate (editable).`
+                : "Enter a rate to calculate."}
+            </p>
+          </div>
+        </div>
+        <div className="emi-layout">
+          <div className="emi-inputs">
+            <Field
+              label="Loan amount (₹)"
+              type="number"
+              min="0"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+            <Field
+              label="Tenure (months)"
+              type="number"
+              min="1"
+              value={tenure}
+              onChange={(event) => setTenure(event.target.value)}
+            />
+            <Field
+              label="Interest rate (% per year)"
+              type="number"
+              min="0"
+              step="0.1"
+              value={rate}
+              onChange={(event) => setRate(event.target.value)}
+            />
+          </div>
+          <div className="emi-results">
+            {result ? (
+              <>
+                <div>
+                  <small>Monthly EMI</small>
+                  <strong className="teal">{formatRupees(result.emi)}</strong>
+                </div>
+                <div>
+                  <small>Total interest</small>
+                  <strong>{formatRupees(result.totalInterest)}</strong>
+                </div>
+                <div>
+                  <small>Total payable</small>
+                  <strong>{formatRupees(result.totalPayable)}</strong>
+                </div>
+              </>
+            ) : (
+              <p className="tech-note">
+                Enter a loan amount, a tenure of at least 1 month and a rate of
+                0 or more to see the EMI.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function EvaluatePage({
   form,
   goTo,
@@ -1331,6 +1493,8 @@ function EvaluatePage({
     )
     // Plain-English paragraph from model/explanation_text.py (rule-based).
     const overallSummary = valueFrom(result, ["overall_summary"])
+    // Layer 1: everyday-language summary (no feature names / SHAP numbers).
+    const plainSummary = valueFrom(result, ["plain_summary"])
     const maxContribution = Math.max(
       ...factors.map((item) => Math.abs(item.contribution)),
       0.001,
@@ -1449,17 +1613,23 @@ function EvaluatePage({
           <div className="section-heading">
             <div>
               <span className="eyebrow">Explainable AI</span>
-              <h2>What influenced this assessment</h2>
-              <p>
-                Contributions are displayed exactly as returned by the
-                evaluation API.
-              </p>
+              <h2>Why this score?</h2>
             </div>
+          </div>
+          {plainSummary ? (
+            <p className="plain-summary">{plainSummary}</p>
+          ) : null}
+          <details className="tech-details">
+            <summary>Show technical details</summary>
+            <p className="tech-note">
+              Feature names and SHAP values exactly as returned by the
+              evaluation API. A positive value pushes the estimated default
+              risk up; a negative value pushes it down.
+            </p>
             <span className="legend">
               <i className="reduce" /> Risk reducing <i className="increase" />{" "}
               Risk increasing
             </span>
-          </div>
           {overallSummary ? (
             <p className="overall-summary">{overallSummary}</p>
           ) : null}
@@ -1509,7 +1679,16 @@ function EvaluatePage({
               text="The assessment completed, but this API response did not include SHAP values or feature explanations."
             />
           )}
+          </details>
         </section>
+        <MarketRatesSection
+          rates={
+            Array.isArray(result.market_rates)
+              ? (result.market_rates as MarketRate[])
+              : []
+          }
+          disclaimer={String(result.market_rates_disclaimer ?? "")}
+        />
         <section className="summary-card">
           <div>
             <span>

@@ -239,7 +239,32 @@ class EvaluateResponse(BaseModel):
     overall_summary: str = Field(
         ..., description="One-paragraph plain-English summary of the assessment (model/explanation_text.py)."
     )
+    plain_summary: str = Field(
+        ...,
+        description=(
+            "2-4 everyday-language sentences with no feature names or SHAP numbers "
+            "(model/explanation_text.py's generate_plain_summary)."
+        ),
+    )
+    market_rates: list["MarketRate"] = Field(
+        default_factory=list,
+        description="Static reference table of typical market loan rates -- identical for everyone.",
+    )
+    rates_as_of: str = Field(..., description="ISO date the market rates were last updated.")
+    market_rates_disclaimer: str = Field(..., description="Banner text to show above the table.")
     assessed_at: datetime
+
+
+class MarketRate(BaseModel):
+    """One bank's published business-loan rate (model/market_rates.py).
+    NOT personalised to the applicant."""
+
+    name: str
+    rate_range: str
+    rate_min: float = Field(..., description="Lowest published rate, % p.a. (for the EMI calculator).")
+    rate_max: Optional[float] = Field(None, description="Highest published rate; None if no upper bound.")
+    note: str
+    url: str
 
 
 class AssessmentRecord(BaseModel):
@@ -255,6 +280,10 @@ class AssessmentRecord(BaseModel):
     top_positive_drivers: list[ShapDriver]
     top_negative_drivers: list[ShapDriver]
     overall_summary: str
+    plain_summary: str
+    market_rates: list[MarketRate] = Field(default_factory=list)
+    rates_as_of: str = ""
+    market_rates_disclaimer: str = ""
 
 
 class CompanyHistoryResponse(BaseModel):

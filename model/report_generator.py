@@ -197,7 +197,8 @@ def _draw_driver_section(
 
     label_column_width = 190
     bar_x = MARGIN + label_column_width
-    max_bar_width = PAGE_WIDTH - MARGIN - bar_x
+    # Leave 70pt on the right for the printed SHAP value.
+    max_bar_width = PAGE_WIDTH - MARGIN - bar_x - 70
 
     if not drivers:
         c.setFont("Helvetica-Oblique", 9)
@@ -219,6 +220,7 @@ def _draw_driver_section(
         c.setFillColor(black)
         c.setFont("Helvetica", 9)
         c.drawString(MARGIN, y, label)
+        c.drawRightString(PAGE_WIDTH - MARGIN, y, f"SHAP {shap_value:+.3f}")
 
         bar_len = (abs(shap_value) / max_abs_shap * max_bar_width) if max_abs_shap > 0 else 0.0
         c.setFillColor(HexColor(bar_color_hex))
@@ -323,18 +325,29 @@ def generate_pdf_report(
     c.line(MARGIN, y, PAGE_WIDTH - MARGIN, y)
     y -= 22
 
-    # --- Plain-English overall summary (optional) ------------------------
-    overall_summary = explanation_result.get("overall_summary")
+    # --- Layer 1: plain-English summary (optional) ------------------------
+    # Falls back to the older technical overall_summary for callers that
+    # don't supply a plain one.
+    overall_summary = explanation_result.get("plain_summary") or explanation_result.get("overall_summary")
     if overall_summary:
         c.setFillColor(black)
         c.setFont("Helvetica-Bold", 12)
-        c.drawString(MARGIN, y, "Summary")
+        c.drawString(MARGIN, y, "Why this score? (plain English)")
         y -= 16
         c.setFont("Helvetica", 10)
-        for line in simpleSplit(overall_summary, "Helvetica", 10, PAGE_WIDTH - 2 * MARGIN):
+        for line in simpleSplit(_pdf_safe(overall_summary), "Helvetica", 10, PAGE_WIDTH - 2 * MARGIN):
             c.drawString(MARGIN, y, line)
             y -= 13
-        y -= 14
+        y -= 8
+
+    # --- Layer 2: technical details (feature names + SHAP values) ---------
+    c.setStrokeColor(HexColor("#cccccc"))
+    c.line(MARGIN, y, PAGE_WIDTH - MARGIN, y)
+    y -= 16
+    c.setFillColor(HexColor("#444444"))
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(MARGIN, y, "Technical details (for loan officers)")
+    y -= 14
 
     # --- SHAP drivers ----------------------------------------------------
     positive_drivers = explanation_result.get("top_positive_contributors", [])
@@ -343,11 +356,11 @@ def generate_pdf_report(
     max_abs_shap = max(all_shap_values) if all_shap_values else 1.0
 
     y = _draw_driver_section(
-        c, "Top Factors Increasing Risk", positive_drivers, RISK_BAND_COLORS["High Risk"], y, max_abs_shap
+        c, "Factors increasing risk (positive SHAP)", positive_drivers, RISK_BAND_COLORS["High Risk"], y, max_abs_shap
     )
     y -= 10
     y = _draw_driver_section(
-        c, "Top Factors Decreasing Risk", negative_drivers, RISK_BAND_COLORS["Low Risk"], y, max_abs_shap
+        c, "Factors decreasing risk (negative SHAP)", negative_drivers, RISK_BAND_COLORS["Low Risk"], y, max_abs_shap
     )
 
     # --- Footer: disclaimer (wrapped across 2 lines so it never collides

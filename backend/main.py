@@ -48,9 +48,14 @@ from backend.schemas import (  # noqa: E402
 from model.bank_statement_parser import BankStatementError, parse_bank_statement_csv  # noqa: E402
 from model.config import FEATURE_COLUMNS  # noqa: E402
 from model.explainer import explain_company  # noqa: E402
-from model.explanation_text import generate_driver_explanation, generate_overall_summary  # noqa: E402
+from model.explanation_text import (  # noqa: E402
+    generate_driver_explanation,
+    generate_overall_summary,
+    generate_plain_summary,
+)
 from model.fairness import MIN_COHORT_SIZE, compute_dir_audit  # noqa: E402
 from model.preprocessing import add_derived_ratios  # noqa: E402
+from model.market_rates import RATES_AS_OF, get_disclaimer, get_market_rates  # noqa: E402
 from model.report_generator import format_driver_value, generate_pdf_report  # noqa: E402
 from model.scoring import score_company  # noqa: E402
 
@@ -247,6 +252,13 @@ def evaluate_company(payload: MSMEInput, db: Session = Depends(get_db)) -> Evalu
             score_result["default_probability"],
             explanation["top_positive_contributors"] + explanation["top_negative_contributors"],
         ),
+        plain_summary=generate_plain_summary(
+            score_result["risk_band"],
+            explanation["top_positive_contributors"] + explanation["top_negative_contributors"],
+        ),
+        market_rates=get_market_rates(),
+        rates_as_of=RATES_AS_OF.isoformat(),
+        market_rates_disclaimer=get_disclaimer(),
         assessed_at=assessment.assessed_at,
     )
 
@@ -323,6 +335,14 @@ def get_company(company_id: str, db: Session = Depends(get_db)) -> CompanyHistor
                     a.shap_top_drivers.get("top_positive_contributors", [])
                     + a.shap_top_drivers.get("top_negative_contributors", []),
                 ),
+                "market_rates": get_market_rates(),
+                "rates_as_of": RATES_AS_OF.isoformat(),
+                "market_rates_disclaimer": get_disclaimer(),
+                "plain_summary": generate_plain_summary(
+                    a.risk_band,
+                    a.shap_top_drivers.get("top_positive_contributors", [])
+                    + a.shap_top_drivers.get("top_negative_contributors", []),
+                ),
             }
             for a in company.assessments
         ],
@@ -375,6 +395,9 @@ def get_company_pdf_report(company_id: str, db: Session = Depends(get_db)) -> St
             latest_assessment.credit_score,
             latest_assessment.default_probability,
             raw_positive + raw_negative,
+        ),
+        "plain_summary": generate_plain_summary(
+            latest_assessment.risk_band, raw_positive + raw_negative
         ),
     }
 

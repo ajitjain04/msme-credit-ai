@@ -18,8 +18,10 @@ if str(PROJECT_ROOT) not in sys.path:
 from model.config import FEATURE_COLUMNS
 from model.explanation_text import (
     FEATURE_EXPLANATIONS,
+    PLAIN_TOPICS,
     generate_driver_explanation,
     generate_overall_summary,
+    generate_plain_summary,
 )
 from tests.test_api import UNREGISTERED_GST_PAYLOAD, VALID_PAYLOAD
 
@@ -102,3 +104,36 @@ def test_company_history_includes_explanations(client):
     company_id = client.post("/api/v1/evaluate", json=VALID_PAYLOAD).json()["company_id"]
     history = client.get(f"/api/v1/company/{company_id}").json()
     _check_response_text(history["assessments"][0])
+
+
+# --- Plain-English layer -----------------------------------------------------
+
+def test_plain_summary_has_no_feature_names_or_numbers():
+    drivers = [
+        {"feature": "account_vintage_months", "shap_value": -0.4},
+        {"feature": "gst_filing_regularity_score", "shap_value": -0.2},
+        {"feature": "cash_flow_volatility", "shap_value": 0.6},
+    ]
+    text = generate_plain_summary("Medium Risk", drivers)
+    assert "helped most by" in text and "held back most by" in text
+    assert "_" not in text and "SHAP" not in text
+    assert not any(ch.isdigit() for ch in text)  # no score / SHAP / % figures
+
+
+def test_plain_summary_only_claims_what_the_signs_support():
+    only_helping = generate_plain_summary("Low Risk", [{"feature": "bounce_count_last_6m", "shap_value": -0.3}])
+    assert "held back" not in only_helping
+    none = generate_plain_summary("High Risk", [])
+    assert "helped" not in none and "held back" not in none and none.strip()
+
+
+def test_every_feature_has_a_plain_topic():
+    assert set(PLAIN_TOPICS) == set(FEATURE_COLUMNS)
+
+
+def test_api_returns_plain_summary(client):
+    body = client.post("/api/v1/evaluate", json=VALID_PAYLOAD).json()
+    assert body["plain_summary"].strip() and "_" not in body["plain_summary"]
+    company_id = body["company_id"]
+    history = client.get(f"/api/v1/company/{company_id}").json()
+    assert history["assessments"][0]["plain_summary"].strip()
