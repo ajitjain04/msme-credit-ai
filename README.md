@@ -13,16 +13,17 @@ It estimates a business’s probability of default using alternative data—bank
 - Default-probability prediction and calibrated risk bands
 - Explainable predictions using **SHAP**
 - FastAPI backend with interactive Swagger documentation
-- Next.js dashboard for:
-  - Business evaluation
+- Vite + React dashboard for:
+  - Business evaluation (including bank-statement CSV upload and company search)
   - Score gauge and risk assessment
-  - SHAP driver analysis
+  - Plain-English "Why this score?" summary with SHAP driver analysis
   - PDF credit-report download
+  - Typical market loan rates with an EMI calculator
   - Portfolio-level analytics
   - Fairness audit using Disparate Impact Ratio (DIR)
 - PostgreSQL support, with SQLite fallback for local development
 - Synthetic Indian MSME data generator
-- Automated test suite with 30 tests
+- Automated test suite with 60 tests
 
 ## Risk bands
 
@@ -65,7 +66,7 @@ Trained & Calibrated ML Model
 FastAPI Backend + Database
         │
         ▼
-Next.js Dashboard / PDF Reports / Portfolio Analytics
+React (Vite) Dashboard / PDF Reports / Portfolio Analytics
 ```
 
 ## Tech stack
@@ -91,12 +92,11 @@ Next.js Dashboard / PDF Reports / Portfolio Analytics
 
 **Frontend**
 
-- Next.js 15
+- Vite
 - React 19
 - TypeScript
-- Tailwind CSS
-- Plotly
-- Axios
+- Tailwind CSS 4
+- Native `fetch` for API calls (no Axios)
 
 **Testing and reporting**
 
@@ -115,7 +115,8 @@ msme-credit-ai/
 │   └── processed/        # Train/test data and local SQLite fallback
 ├── dashboard/            # Legacy Streamlit dashboard
 ├── docs/                 # Data dictionary, progress log, visuals
-├── frontend/             # Next.js dashboard
+├── frontend/             # Vite + React + TypeScript + Tailwind CSS dashboard
+├── frontend_nextjs_backup/  # Earlier Next.js dashboard, kept as a reference only
 ├── model/                # Training, calibration, scoring, SHAP, fairness logic
 │   └── artifacts/        # Saved model, calibration and metrics artifacts
 ├── notebooks/            # Exploratory data analysis
@@ -162,7 +163,7 @@ Open:
 - API documentation: http://127.0.0.1:8000/docs
 - Health check: http://127.0.0.1:8000/health
 
-### 5. Start the Next.js dashboard
+### 5. Start the React dashboard
 
 In a second terminal:
 
@@ -171,11 +172,13 @@ cd frontend
 npm install
 ```
 
-Create `frontend/.env.local`:
+Copy `frontend/.env.local.example` to `frontend/.env.local` (or create it) with:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8000
 ```
+
+The frontend reads `VITE_API_URL` in `frontend/src/api.ts`, falling back to `NEXT_PUBLIC_API_URL` and then to an empty string (same-origin requests, which only work behind a proxy). Always set `VITE_API_URL` for local development.
 
 Then run:
 
@@ -183,7 +186,11 @@ Then run:
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:5173 (Vite's default port; this project does not override it). Use `localhost`, not a network IP, so the backend's CORS rules allow the requests.
+
+### Troubleshooting
+
+If you see "address already in use" when starting the backend, another process is likely using port 8000. Either stop it, or start uvicorn on a different port (`--port 8001`) **and** update `frontend/.env.local`'s `VITE_API_URL` to match. Vite reads `.env.local` before `.env`, so the override must go there, not just in `.env`. After changing it, restart the frontend dev server; a browser refresh alone won't pick up the change.
 
 ## API endpoints
 
@@ -191,6 +198,8 @@ Open http://localhost:3000.
 |---|---|---|
 | `GET` | `/health` | API health check |
 | `POST` | `/api/v1/evaluate` | Score an MSME and save its assessment |
+| `POST` | `/api/v1/parse-bank-statement` | Turn an uploaded bank-statement CSV into banking features |
+| `GET` | `/api/v1/companies` | List/search assessed companies |
 | `GET` | `/api/v1/company/{company_id}` | Retrieve company profile and assessment history |
 | `GET` | `/api/v1/company/{company_id}/report/pdf` | Download a PDF credit report |
 | `GET` | `/api/v1/analytics/portfolio` | Retrieve portfolio risk analytics |
@@ -206,7 +215,9 @@ For every evaluated MSME, the platform returns:
 - Top risk-increasing factors
 - Top risk-reducing factors
 - SHAP values for model explainability
+- A plain-English "Why this score?" summary (no feature names or SHAP numbers) shown first, with the SHAP technical detail beside it: collapsible on the dashboard, and in a separate "Technical details" section of the PDF
 - Downloadable one-page PDF credit report
+- A "Typical Business Loan Rates in the Market" reference section with an EMI/loan-eligibility calculator. It shows the same table to everyone and is general market information, not a personalized offer. The credit score itself does not come from a real credit bureau.
 
 ## Model performance
 
@@ -236,7 +247,7 @@ Run the automated suite with:
 pytest tests/ -v
 ```
 
-The repository currently contains 30 model, calibration, predictor, and API tests.
+The repository currently contains 60 model, calibration, explanation-text, market-rates, and API tests.
 
 ## Important limitations
 
